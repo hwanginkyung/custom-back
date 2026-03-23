@@ -45,7 +45,7 @@ public class AdminUserController {
         return ResponseEntity.ok(adminUserService.createStaff(req));
     }
 
-    @PutMapping("/me/password")
+    @PatchMapping("/password")
     @Operation(summary = "비밀번호 변경")
     public ResponseEntity<String> changePassword(
             @AuthenticationPrincipal CustomUserDetails me,

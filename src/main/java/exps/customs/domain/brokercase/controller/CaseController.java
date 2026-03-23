@@ -50,7 +50,7 @@ public class CaseController {
         return ResponseEntity.ok(caseService.create(req));
     }
 
-    @PutMapping("/{id}")
+    @PatchMapping("/{id}")
     @Operation(summary = "케이스 수정")
     public ResponseEntity<CaseResponse> update(@PathVariable Long id, @Valid @RequestBody UpdateCaseRequest req) {
         return ResponseEntity.ok(caseService.update(id, req));

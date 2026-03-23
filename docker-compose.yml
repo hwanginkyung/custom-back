@@ -1,0 +1,55 @@
+version: "3.8"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: cafe-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: cafe
+      MYSQL_USER: cafe
+      MYSQL_PASSWORD: cafe
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: cariv-redis
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: cariv
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      APP_SECURITY_ALLOW_DOCS: "true"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DATABASE_URL: jdbc:mysql://mysql:3306/cafe?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+      DATABASE_USERNAME: cafe
+      DATABASE_PASSWORD: cafe
+      CORS_ALLOWED_ORIGINS: https://carivexport.com,https://www.carivexport.com,https://api.carivexport.com,http://3.36.77.113:8080,http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173
+    ports:
+      - "8080:8080"
+
+volumes:
+  mysql-data:

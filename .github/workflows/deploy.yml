@@ -1,0 +1,79 @@
+name: Deploy to EC2
+
+# main 브랜치에 push할 때만 배포
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) 코드 가져오기
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2) JDK 17 설치
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      # 3) Gradle 캐시
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      # 4) JAR 빌드
+      - name: Build JAR
+        run: |
+          chmod +x gradlew
+          ./gradlew clean build -x test
+
+      # 5) Docker 이미지 빌드 + tar.gz로 압축
+      - name: Build Docker image
+        run: |
+          docker build -t cariv:latest .
+          docker save cariv:latest | gzip > cariv-image.tar.gz
+
+      # 6) EC2로 이미지 전송
+      - name: Copy image to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "cariv-image.tar.gz"
+          target: "/home/${{ secrets.EC2_USERNAME }}"
+
+      # 7) EC2에서 이미지 로드 + docker-compose 재시작
+      - name: Deploy on EC2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "=== Loading Docker image ==="
+            docker load < ~/cariv-image.tar.gz
+
+            echo "=== Restarting application ==="
+            cd ~/app
+            docker-compose up -d --force-recreate --no-deps cariv
+
+            echo "=== Cleanup ==="
+            rm -f ~/cariv-image.tar.gz
+            docker image prune -f
+
+            echo "=== Health check ==="
+            sleep 10
+            curl -sf http://localhost:8080/actuator/health || echo "WARNING: Health check failed"
+
+            echo "=== Deploy complete ==="

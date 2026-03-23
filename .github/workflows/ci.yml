@@ -1,0 +1,56 @@
+name: CI
+
+# 언제 실행?
+# - main, develop 브랜치에 push할 때
+# - main으로 PR 올릴 때
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest    # GitHub이 제공하는 무료 Ubuntu VM
+
+    steps:
+      # 1) 코드 가져오기
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2) JDK 17 설치
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      # 3) Gradle 캐시 (빌드 속도 향상)
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      # 4) Gradle 실행 권한
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      # 5) 빌드
+      - name: Build
+        run: ./gradlew clean build -x test
+
+      # 6) 테스트 (나중에 테스트 코드 추가하면 활성화)
+      # - name: Test
+      #   run: ./gradlew test
+
+      # 7) 빌드 결과물 저장 (다음 job에서 사용 가능)
+      - name: Upload JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: build/libs/*.jar
+          retention-days: 7

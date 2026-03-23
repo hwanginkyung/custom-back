@@ -1,0 +1,50 @@
+  app:
+  security:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+    allow-docs: false
+    refresh-cookie:
+      name: refresh_token
+      secure: ${REFRESH_COOKIE_SECURE:true}
+      same-site: ${REFRESH_COOKIE_SAME_SITE:None}
+
+server:
+  address: 0.0.0.0
+  port: 8081
+  forward-headers-strategy: framework
+
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      repositories:
+        enabled: false
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+  datasource:
+    url: ${DATABASE_URL:jdbc:mysql://mysql:3306/cafe?useSSL=true&requireSSL=true&allowPublicKeyRetrieval=false&serverTimezone=Asia/Seoul&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true}
+    username: ${DATABASE_USERNAME:cafe}
+    password: ${DATABASE_PASSWORD:cafe}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    database-platform: org.hibernate.dialect.MySQLDialect
+    properties:
+      hibernate.jdbc.batch_size: 20
+      hibernate.order_inserts: true
+      hibernate.order_updates: true
+
+jwt:
+  secret: ${JWT_SECRET:4fe29ca35684eaa6833507f0ebdae8a80a188b58f66ed1f20a4f88bc3ccb8ed0}
+  access-token-expire-ms: ${JWT_ACCESS_TOKEN_EXPIRE_MS:1800000}
+  refresh-token-expire-ms: ${JWT_REFRESH_TOKEN_EXPIRE_MS:1209600000}

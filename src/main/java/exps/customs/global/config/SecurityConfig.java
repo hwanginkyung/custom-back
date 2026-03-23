@@ -39,6 +39,9 @@ public class SecurityConfig {
     @Value("${app.security.allow-docs:false}")
     private boolean allowDocs;
 
+    @Value("${ncustoms.api.permit-all:false}")
+    private boolean ncustomsApiPermitAll;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
@@ -64,6 +67,9 @@ public class SecurityConfig {
                         auth.requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/swagger-resources/**", "/webjars/**", "/h2-console/**").permitAll();
                     } else {
                         auth.requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/swagger-resources/**", "/webjars/**", "/h2-console/**").denyAll();
+                    }
+                    if (ncustomsApiPermitAll) {
+                        auth.requestMatchers("/api/ncustoms/**").permitAll();
                     }
                     auth.requestMatchers("/api/master/**").hasRole("MASTER")
                             .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "MASTER")

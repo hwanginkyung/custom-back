@@ -52,3 +52,17 @@ jwt:
   secret: ${JWT_SECRET:4fe29ca35684eaa6833507f0ebdae8a80a188b58f66ed1f20a4f88bc3ccb8ed0}
   access-token-expire-ms: 1800000
   refresh-token-expire-ms: 1209600000
+
+ncustoms:
+  api:
+    permit-all: ${NCUSTOMS_API_PERMIT_ALL:false}
+  datasource:
+    enabled: false
+    url: ${NCUSTOMS_DB_URL:jdbc:mysql://192.168.0.46:53306/ncustoms?useUnicode=true&characterEncoding=EUC-KR&serverTimezone=Asia/Seoul&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${NCUSTOMS_DB_USERNAME:kcba}
+    password: ${NCUSTOMS_DB_PASSWORD:kcbapasswd}
+    driver-class-name: ${NCUSTOMS_DB_DRIVER:com.mysql.cj.jdbc.Driver}
+    connection-init-sql: ${NCUSTOMS_DB_INIT_SQL:SET NAMES euckr}
+  export:
+    create-enabled: ${NCUSTOMS_CREATE_ENABLED:false}
+    lock-timeout-seconds: ${NCUSTOMS_LOCK_TIMEOUT_SECONDS:10}

@@ -1,5 +1,6 @@
 package exps.customs.domain.ncustoms.service;
 
+import exps.customs.domain.login.repository.UserRepository;
 import exps.customs.domain.ncustoms.dto.CreateNcustomsContainerTempSaveRequest;
 import exps.customs.domain.ncustoms.dto.CreateNcustomsExportRequest;
 import exps.customs.domain.ncustoms.dto.NcustomsContainerTempSaveResponse;
@@ -26,10 +27,11 @@ class NcustomsExportServiceTest {
     @Test
     void createExport_whenCreateDisabled_thenThrowsForbidden() throws Exception {
         DataSource dataSource = mock(DataSource.class);
-        NcustomsExportService service = new NcustomsExportService(dataSource);
+        UserRepository userRepository = mock(UserRepository.class);
+        NcustomsExportService service = new NcustomsExportService(dataSource, userRepository);
         ReflectionTestUtils.setField(service, "createEnabled", false);
 
-        assertThatThrownBy(() -> service.createExport(new CreateNcustomsExportRequest(), "tester@jinsol.co.kr"))
+        assertThatThrownBy(() -> service.createExport(new CreateNcustomsExportRequest(), null, "tester@jinsol.co.kr"))
                 .isInstanceOf(CustomException.class)
                 .satisfies(ex -> assertThat(((CustomException) ex).getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
 
@@ -39,6 +41,7 @@ class NcustomsExportServiceTest {
     @Test
     void createTempSaveWithContainer_success() throws Exception {
         DataSource dataSource = mock(DataSource.class);
+        UserRepository userRepository = mock(UserRepository.class);
         Connection connection = mock(Connection.class);
         List<String> sqlHistory = new ArrayList<>();
 
@@ -49,11 +52,11 @@ class NcustomsExportServiceTest {
             return preparedStatementForSuccess(sql);
         });
 
-        NcustomsExportService service = new NcustomsExportService(dataSource);
+        NcustomsExportService service = new NcustomsExportService(dataSource, userRepository);
         ReflectionTestUtils.setField(service, "lockTimeoutSeconds", 10);
 
         CreateNcustomsContainerTempSaveRequest request = sampleRequest();
-        NcustomsContainerTempSaveResponse response = service.createTempSaveWithContainer(request, "tester@jinsol.co.kr");
+        NcustomsContainerTempSaveResponse response = service.createTempSaveWithContainer(request, null, "tester@jinsol.co.kr");
 
         assertThat(response.getExpoKey()).isEqualTo("20264000017");
         assertThat(response.getExpoJechlNo()).isEqualTo("400011");
@@ -77,6 +80,7 @@ class NcustomsExportServiceTest {
     @Test
     void createTempSaveWithContainer_whenLockFails_thenThrowsInvalidInput() throws Exception {
         DataSource dataSource = mock(DataSource.class);
+        UserRepository userRepository = mock(UserRepository.class);
         Connection connection = mock(Connection.class);
         List<String> sqlHistory = new ArrayList<>();
 
@@ -95,10 +99,10 @@ class NcustomsExportServiceTest {
             return ps;
         });
 
-        NcustomsExportService service = new NcustomsExportService(dataSource);
+        NcustomsExportService service = new NcustomsExportService(dataSource, userRepository);
         ReflectionTestUtils.setField(service, "lockTimeoutSeconds", 10);
 
-        assertThatThrownBy(() -> service.createTempSaveWithContainer(sampleRequest(), "tester@jinsol.co.kr"))
+        assertThatThrownBy(() -> service.createTempSaveWithContainer(sampleRequest(), null, "tester@jinsol.co.kr"))
                 .isInstanceOf(CustomException.class)
                 .satisfies(ex -> assertThat(((CustomException) ex).getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT));
 

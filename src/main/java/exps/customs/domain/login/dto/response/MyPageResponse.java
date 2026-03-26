@@ -24,4 +24,13 @@ public class MyPageResponse {
 
     @Schema(description = "회사 ID")
     private final Long companyId;
+
+    @Schema(description = "NCustoms 사용자 코드")
+    private final String ncustomsUserCode;
+
+    @Schema(description = "NCustoms 작성자 ID")
+    private final String ncustomsWriterId;
+
+    @Schema(description = "NCustoms 작성자명")
+    private final String ncustomsWriterName;
 }

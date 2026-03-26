@@ -1,6 +1,7 @@
 package exps.customs.domain.ncustoms.service;
 
 import com.zaxxer.hikari.HikariDataSource;
+import exps.customs.domain.login.repository.UserRepository;
 import exps.customs.domain.ncustoms.dto.CreateNcustomsContainerTempSaveRequest;
 import exps.customs.domain.ncustoms.dto.NcustomsContainerTempSaveResponse;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class NcustomsRealDbTempSaveIntegrationTest {
 
@@ -37,7 +39,8 @@ class NcustomsRealDbTempSaveIntegrationTest {
         dataSource.setMinimumIdle(0);
 
         try {
-            NcustomsExportService service = new NcustomsExportService(dataSource);
+            UserRepository userRepository = mock(UserRepository.class);
+            NcustomsExportService service = new NcustomsExportService(dataSource, userRepository);
             ReflectionTestUtils.setField(service, "lockTimeoutSeconds", 10);
 
             CreateNcustomsContainerTempSaveRequest req = new CreateNcustomsContainerTempSaveRequest();
@@ -100,7 +103,7 @@ class NcustomsRealDbTempSaveIntegrationTest {
             set(req, "writerId", "payload-writer");
             set(req, "writerName", "PAYLOAD WRITER");
 
-            NcustomsContainerTempSaveResponse result = service.createTempSaveWithContainer(req, "apiuser");
+            NcustomsContainerTempSaveResponse result = service.createTempSaveWithContainer(req, null, "apiuser");
             assertThat(result.getExpoKey()).isNotBlank();
             assertThat(result.getExpoJechlNo()).isNotBlank();
 

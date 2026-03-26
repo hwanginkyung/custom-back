@@ -33,8 +33,9 @@ public class NcustomsExportController {
             @Valid @RequestBody CreateNcustomsExportRequest request,
             @AuthenticationPrincipal CustomUserDetails me
     ) {
+        Long actorUserId = me == null ? null : me.getUserId();
         String actorLoginId = me == null ? null : me.getUsername();
-        return ResponseEntity.ok(ncustomsExportService.createExport(request, actorLoginId));
+        return ResponseEntity.ok(ncustomsExportService.createExport(request, actorUserId, actorLoginId));
     }
 
     @PostMapping("/exports/temp-with-container")
@@ -43,8 +44,9 @@ public class NcustomsExportController {
             @Valid @RequestBody CreateNcustomsContainerTempSaveRequest request,
             @AuthenticationPrincipal CustomUserDetails me
     ) {
+        Long actorUserId = me == null ? null : me.getUserId();
         String actorLoginId = me == null ? null : me.getUsername();
-        return ResponseEntity.ok(ncustomsExportService.createTempSaveWithContainer(request, actorLoginId));
+        return ResponseEntity.ok(ncustomsExportService.createTempSaveWithContainer(request, actorUserId, actorLoginId));
     }
 
     @GetMapping("/shippers")

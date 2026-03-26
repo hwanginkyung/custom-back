@@ -29,6 +29,15 @@ public class User extends TenantEntity {
 
     private boolean active;
 
+    @Column(length = 10)
+    private String ncustomsUserCode;
+
+    @Column(length = 100)
+    private String ncustomsWriterId;
+
+    @Column(length = 100)
+    private String ncustomsWriterName;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;

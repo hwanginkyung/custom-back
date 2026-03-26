@@ -1,5 +1,7 @@
 package exps.customs.domain.ncustoms.service;
 
+import exps.customs.domain.login.entity.User;
+import exps.customs.domain.login.repository.UserRepository;
 import exps.customs.domain.ncustoms.dto.CreateNcustomsContainerTempSaveRequest;
 import exps.customs.domain.ncustoms.dto.CreateNcustomsExportRequest;
 import exps.customs.domain.ncustoms.dto.NcustomsContainerTempSaveResponse;
@@ -40,6 +42,7 @@ public class NcustomsExportService {
 
     @Qualifier("ncustomsDataSource")
     private final DataSource ncustomsDataSource;
+    private final UserRepository userRepository;
 
     @Value("${ncustoms.export.lock-timeout-seconds:10}")
     private int lockTimeoutSeconds;
@@ -107,12 +110,20 @@ public class NcustomsExportService {
         }
     }
 
-    public NcustomsExportResponse createExport(CreateNcustomsExportRequest req, String actorLoginId) {
+    public NcustomsExportResponse createExport(CreateNcustomsExportRequest req, Long actorUserId, String actorLoginId) {
         if (!createEnabled) {
             throw new CustomException(ErrorCode.FORBIDDEN, "create export is disabled. use temp-save only");
         }
 
-        String lockKey = "ncustoms:expo:" + req.getYear() + ":" + req.getUserCode();
+        ActorContext actor = resolveActorContext(
+                actorUserId,
+                actorLoginId,
+                req.getUserCode(),
+                req.getWriterId(),
+                req.getWriterName()
+        );
+
+        String lockKey = "ncustoms:expo:" + req.getYear() + ":" + actor.userCode();
         boolean lockAcquired = false;
 
         try (Connection conn = ncustomsDataSource.getConnection()) {
@@ -124,15 +135,15 @@ public class NcustomsExportService {
                 throw new CustomException(ErrorCode.INVALID_INPUT, "failed to acquire ncustoms lock");
             }
             try {
-                String nextPno = nextAvailablePno(conn, req.getYear(), req.getUserCode());
-                String nextDno = nextAvailableDno(conn, req.getYear(), req.getUserCode());
-                String expoKey = req.getYear() + req.getUserCode() + nextPno;
+                String nextPno = nextAvailablePno(conn, req.getYear(), actor.userCode());
+                String nextDno = nextAvailableDno(conn, req.getYear(), actor.userCode());
+                String expoKey = req.getYear() + actor.userCode() + nextPno;
                 String singoDate = resolveSingoDate(req.getSingoDate());
                 DealMaster suchuljaMaster = resolveDealMaster(conn, req.getSuchuljaCode(), req.getSuchuljaSangho(), null, null);
                 DealMaster trustMaster = resolveDealMaster(conn, req.getTrustCode(), req.getTrustSangho(), req.getTrustTong(), req.getTrustSaup());
                 String gumaejaSangho = resolveGonggubSangho(conn, req.getGumaejaCode(), req.getGumaejaSangho());
-                String writerId = resolveWriterId(req.getWriterId(), actorLoginId);
-                String writerName = resolveWriterName(req.getWriterName(), actorLoginId);
+                String writerId = actor.writerId();
+                String writerName = actor.writerName();
 
                 String addDtTime = LocalDateTime.now(ZoneId.of("Asia/Seoul")).format(YMD_HMS);
 
@@ -210,8 +221,20 @@ public class NcustomsExportService {
         }
     }
 
-    public NcustomsContainerTempSaveResponse createTempSaveWithContainer(CreateNcustomsContainerTempSaveRequest req, String actorLoginId) {
-        String lockKey = "ncustoms:expo:" + req.getYear() + ":" + req.getUserCode();
+    public NcustomsContainerTempSaveResponse createTempSaveWithContainer(
+            CreateNcustomsContainerTempSaveRequest req,
+            Long actorUserId,
+            String actorLoginId
+    ) {
+        ActorContext actor = resolveActorContext(
+                actorUserId,
+                actorLoginId,
+                req.getUserCode(),
+                req.getWriterId(),
+                req.getWriterName()
+        );
+
+        String lockKey = "ncustoms:expo:" + req.getYear() + ":" + actor.userCode();
         boolean lockAcquired = false;
 
         try (Connection conn = ncustomsDataSource.getConnection()) {
@@ -224,17 +247,17 @@ public class NcustomsExportService {
             }
 
             try {
-                String nextPno = nextAvailablePno(conn, req.getYear(), req.getUserCode());
-                String nextDno = nextAvailableDno(conn, req.getYear(), req.getUserCode());
+                String nextPno = nextAvailablePno(conn, req.getYear(), actor.userCode());
+                String nextDno = nextAvailableDno(conn, req.getYear(), actor.userCode());
                 String singoDate = resolveSingoDate(req.getSingoDate());
                 DealMaster suchuljaMaster = resolveDealMaster(conn, req.getSuchuljaCode(), req.getSuchuljaSangho(), null, null);
                 DealMaster whajuMaster = resolveDealMaster(conn, req.getWhajuCode(), req.getWhajuSangho(), req.getWhajuTong(), req.getWhajuSaup());
                 DealMaster trustMaster = resolveDealMaster(conn, req.getTrustCode(), req.getTrustSangho(), req.getTrustTong(), req.getTrustSaup());
                 String gumaejaSangho = resolveGonggubSangho(conn, req.getGumaejaCode(), req.getGumaejaSangho());
-                String writerId = resolveWriterId(req.getWriterId(), actorLoginId);
-                String writerName = resolveWriterName(req.getWriterName(), actorLoginId);
+                String writerId = actor.writerId();
+                String writerName = actor.writerName();
 
-                String expoKey = req.getYear() + req.getUserCode() + nextPno;
+                String expoKey = req.getYear() + actor.userCode() + nextPno;
                 String lanNo = defaultIfBlank(req.getLanNo(), "001");
                 String hangNo = defaultIfBlank(req.getHangNo(), "01");
                 String seqNo = defaultIfBlank(req.getContainerSeqNo(), "001");
@@ -527,12 +550,27 @@ public class NcustomsExportService {
         return LocalDate.now(ZoneId.of("Asia/Seoul")).format(YMD);
     }
 
-    private String resolveWriterId(String requestWriterId, String actorLoginId) {
-        return defaultIfBlank(actorLoginId, defaultIfBlank(requestWriterId, "SYSTEM"));
-    }
+    private ActorContext resolveActorContext(
+            Long actorUserId,
+            String actorLoginId,
+            String requestUserCode,
+            String requestWriterId,
+            String requestWriterName
+    ) {
+        String userCode = defaultIfBlank(requestUserCode, "4");
+        String writerId = defaultIfBlank(actorLoginId, defaultIfBlank(requestWriterId, "SYSTEM"));
+        String writerName = defaultIfBlank(requestWriterName, writerId);
 
-    private String resolveWriterName(String requestWriterName, String actorLoginId) {
-        return defaultIfBlank(actorLoginId, defaultIfBlank(requestWriterName, "SYSTEM"));
+        if (actorUserId != null) {
+            User user = userRepository.findById(actorUserId).orElse(null);
+            if (user != null) {
+                userCode = defaultIfBlank(user.getNcustomsUserCode(), userCode);
+                writerId = defaultIfBlank(user.getNcustomsWriterId(), defaultIfBlank(user.getLoginId(), writerId));
+                writerName = defaultIfBlank(user.getNcustomsWriterName(), writerName);
+            }
+        }
+
+        return new ActorContext(userCode, writerId, writerName);
     }
 
     private DealMaster resolveDealMaster(Connection conn, String dealCode, String fallbackSangho, String fallbackTong, String fallbackSaup) throws SQLException {
@@ -644,6 +682,9 @@ public class NcustomsExportService {
             conn.rollback();
         } catch (Exception ignored) {
         }
+    }
+
+    private record ActorContext(String userCode, String writerId, String writerName) {
     }
 
     private record DealMaster(String sangho, String tong, String saup) {

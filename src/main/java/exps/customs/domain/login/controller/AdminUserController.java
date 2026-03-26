@@ -2,6 +2,7 @@ package exps.customs.domain.login.controller;
 
 import exps.customs.domain.login.dto.request.ChangePasswordRequest;
 import exps.customs.domain.login.dto.request.CreateStaffRequest;
+import exps.customs.domain.login.dto.request.UpdateMyNcustomsProfileRequest;
 import exps.customs.domain.login.dto.response.MyPageResponse;
 import exps.customs.domain.login.dto.response.StaffResponse;
 import exps.customs.domain.login.service.AdminUserService;
@@ -29,6 +30,15 @@ public class AdminUserController {
     @Operation(summary = "마이페이지")
     public ResponseEntity<MyPageResponse> getMyPage(@AuthenticationPrincipal CustomUserDetails me) {
         return ResponseEntity.ok(adminUserService.getMyPage(me.getUserId()));
+    }
+
+    @PatchMapping("/me/ncustoms-profile")
+    @Operation(summary = "내 NCustoms 연동 프로필 수정")
+    public ResponseEntity<MyPageResponse> updateMyNcustomsProfile(
+            @AuthenticationPrincipal CustomUserDetails me,
+            @Valid @RequestBody UpdateMyNcustomsProfileRequest req
+    ) {
+        return ResponseEntity.ok(adminUserService.updateMyNcustomsProfile(me.getUserId(), req));
     }
 
     @GetMapping("/staff")

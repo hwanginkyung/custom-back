@@ -2,6 +2,7 @@ package exps.customs.domain.login.service;
 
 import exps.customs.domain.login.dto.request.ChangePasswordRequest;
 import exps.customs.domain.login.dto.request.CreateStaffRequest;
+import exps.customs.domain.login.dto.request.UpdateMyNcustomsProfileRequest;
 import exps.customs.domain.login.dto.response.MyPageResponse;
 import exps.customs.domain.login.dto.response.StaffResponse;
 import exps.customs.domain.login.entity.Company;
@@ -39,6 +40,9 @@ public class AdminUserService {
                 .role(user.getRole())
                 .active(user.isActive())
                 .companyId(user.getCompanyId())
+                .ncustomsUserCode(user.getNcustomsUserCode())
+                .ncustomsWriterId(user.getNcustomsWriterId())
+                .ncustomsWriterName(user.getNcustomsWriterName())
                 .build();
     }
 
@@ -98,5 +102,24 @@ public class AdminUserService {
         user.setActive(!user.isActive());
         userRepository.save(user);
         log.info("[Admin] staff active toggled userId={}, active={}", staffId, user.isActive());
+    }
+
+    @Transactional
+    public MyPageResponse updateMyNcustomsProfile(Long userId, UpdateMyNcustomsProfileRequest req) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND));
+
+        user.setNcustomsUserCode(trimToNull(req.getNcustomsUserCode()));
+        user.setNcustomsWriterId(trimToNull(req.getNcustomsWriterId()));
+        user.setNcustomsWriterName(trimToNull(req.getNcustomsWriterName()));
+        userRepository.save(user);
+
+        return getMyPage(userId);
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

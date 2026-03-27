@@ -55,6 +55,28 @@ public class BizRegDocument extends Document {
         return doc;
     }
 
+    /**
+     * 합본(사업자등록증+신분증) 문서 생성용 팩토리.
+     * type을 BIZ_ID_COMBINED으로 설정, OCR은 사업자등록증 규칙 적용.
+     */
+    public static BizRegDocument createCombined(Long companyId, Long uploadedByUserId,
+                                                 Long shipperId, String s3Key, String originalFilename,
+                                                 String contentType, long sizeBytes) {
+        BizRegDocument doc = new BizRegDocument();
+        doc.companyId = companyId;
+        doc.type = DocumentType.BIZ_ID_COMBINED;
+        doc.status = DocumentStatus.UPLOADED;
+        doc.refType = DocumentRefType.SHIPPER;
+        doc.refId = shipperId;
+        doc.s3Key = s3Key;
+        doc.uploadedByUserId = uploadedByUserId;
+        doc.originalFilename = originalFilename;
+        doc.contentType = contentType;
+        doc.sizeBytes = sizeBytes;
+        doc.uploadedAt = Instant.now();
+        return doc;
+    }
+
     public void applyOcrResult(String companyName, String representativeName,
                                 String bizNumber, String bizType, String bizCategory,
                                 String bizAddress, String openDate, String rawJson) {

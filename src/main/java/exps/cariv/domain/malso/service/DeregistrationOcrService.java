@@ -13,6 +13,7 @@ import exps.cariv.domain.notification.entity.NotificationType;
 import exps.cariv.domain.notification.service.NotificationCommandService;
 import exps.cariv.domain.ocr.entity.OcrParseJob;
 import exps.cariv.domain.vehicle.entity.Vehicle;
+import exps.cariv.domain.vehicle.entity.VehicleStage;
 import exps.cariv.domain.vehicle.repository.VehicleRepository;
 import exps.cariv.global.aws.S3ObjectReader;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * 말소증 OCR 처리 서비스.
@@ -97,6 +97,13 @@ public class DeregistrationOcrService {
                 });
         doc.linkToVehicle(vehicleId);
 
+        // 5-1) OCR 완료 시 자동 stage 전환: BEFORE_DEREGISTRATION → BEFORE_REPORT
+        Vehicle matchedVehicle = vehicleRepo.findActiveByIdAndCompanyId(vehicleId, companyId).orElse(null);
+        if (matchedVehicle != null && matchedVehicle.getStage() == VehicleStage.BEFORE_DEREGISTRATION) {
+            matchedVehicle.updateStage(VehicleStage.BEFORE_REPORT);
+            vehicleRepo.save(matchedVehicle);
+        }
+
         // 6) 결과 저장
         doc.applyOcrResult(parsedDereg, null); // CLOVA는 테이블 HTML 없음
         deregRepo.save(doc);
@@ -121,8 +128,8 @@ public class DeregistrationOcrService {
 
     private List<String> checkMissing(ParsedDereg p) {
         List<String> missing = new ArrayList<>();
-        if (isBlank(p.registrationNo())) missing.add("registrationNo");
-        if (p.deRegistrationDate() == null) missing.add("deRegistrationDate");
+        if (isBlank(p.registrationNo())) missing.add("차량번호");
+        if (p.deRegistrationDate() == null) missing.add("말소등록일");
         return missing;
     }
 
@@ -140,22 +147,36 @@ public class DeregistrationOcrService {
         String vehicleNo = normalizeVehicleNo(
                 firstNonBlank(parsed.registrationNo(), parsed.vehicleNo()));
 
-        Optional<Vehicle> byVin = vin == null
-                ? Optional.empty()
-                : vehicleRepo.findByCompanyIdAndVinAndDeletedFalse(companyId, vin);
-        Optional<Vehicle> byVehicleNo = vehicleNo == null
-                ? Optional.empty()
-                : vehicleRepo.findByCompanyIdAndVehicleNoAndDeletedFalse(companyId, vehicleNo);
+        List<Vehicle> byVin = vin == null
+                ? List.of()
+                : vehicleRepo.findAllByCompanyIdAndVinAndDeletedFalseOrderByIdDesc(companyId, vin);
+        List<Vehicle> byVehicleNo = vehicleNo == null
+                ? List.of()
+                : vehicleRepo.findAllByCompanyIdAndVehicleNoAndDeletedFalseOrderByIdDesc(companyId, vehicleNo);
 
-        if (byVin.isPresent() && byVehicleNo.isPresent()
-                && !byVin.get().getId().equals(byVehicleNo.get().getId())) {
+        if (byVin.size() > 1) {
+            throw new IllegalStateException(
+                    "중복된 차량이 존재합니다: vin=" + vin + " (count=" + byVin.size() + ")"
+            );
+        }
+        if (byVehicleNo.size() > 1) {
+            throw new IllegalStateException(
+                    "중복된 차량이 존재합니다: vehicleNo=" + vehicleNo + " (count=" + byVehicleNo.size() + ")"
+            );
+        }
+
+        Vehicle vinMatched = byVin.isEmpty() ? null : byVin.get(0);
+        Vehicle vehicleNoMatched = byVehicleNo.isEmpty() ? null : byVehicleNo.get(0);
+
+        if (vinMatched != null && vehicleNoMatched != null
+                && !vinMatched.getId().equals(vehicleNoMatched.getId())) {
             throw new IllegalStateException(
                     "OCR 차량 매칭 충돌: vin=" + vin + ", vehicleNo=" + vehicleNo
             );
         }
 
-        if (byVin.isPresent()) return byVin.get().getId();
-        if (byVehicleNo.isPresent()) return byVehicleNo.get().getId();
+        if (vinMatched != null) return vinMatched.getId();
+        if (vehicleNoMatched != null) return vehicleNoMatched.getId();
 
         throw new IllegalStateException(
                 "OCR 차량 매칭 실패: vin=" + safe(vin) + ", vehicleNo=" + safe(vehicleNo)

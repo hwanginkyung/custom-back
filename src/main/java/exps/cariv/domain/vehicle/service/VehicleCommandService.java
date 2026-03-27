@@ -67,6 +67,7 @@ public class VehicleCommandService {
                 .shipperName(shipper.getName())
                 .shipperId(shipper.getId())
                 .ownerType(ownerType)
+                .purchaseDate(req.purchaseDate())
                 .stage(VehicleStage.BEFORE_DEREGISTRATION)
                 .build();
         vehicle.setCompanyId(companyId);
@@ -134,6 +135,11 @@ public class VehicleCommandService {
                 req.saleAmount(),
                 req.saleDate()
         );
+
+        // 면허일
+        if (req.licenseDate() != null) {
+            v.updateLicenseDate(req.licenseDate());
+        }
 
         // stage 변경
         if (req.stage() != null && !req.stage().isBlank()) {

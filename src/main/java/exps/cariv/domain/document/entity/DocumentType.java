@@ -8,6 +8,7 @@ public enum DocumentType {
     AUCTION_CERTIFICATE,     // 경락사실확인서
     ID_CARD,                 // 신분증
     BIZ_REGISTRATION,        // 사업자등록
+    BIZ_ID_COMBINED,         // 사업자등록증+신분증 합본
     CONTRACT,                // 매매계약서
     SIGN,                    // 사인방 (화주 서명)
     SEAL,                    // 인감 (화주 인감)

@@ -24,7 +24,7 @@ import java.time.Instant;
 public class IdCardDocument extends Document {
 
     private String holderName;      // 이름
-    private String idNumber;        // 주민등록번호 (마스킹 저장 가능)
+    private String idNumber;        // 주민등록번호 (원본 저장)
     private String idAddress;       // 주소
     private String issueDate;       // 발급일
 

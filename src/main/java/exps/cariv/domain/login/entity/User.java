@@ -41,6 +41,18 @@ public class User extends TenantEntity {
         this.passwordHash = encodedPassword;
     }
 
+    public void changeEmail(String email) {
+        this.email = email;
+    }
+
+    public void changeRole(Role role) {
+        this.role = role;
+    }
+
+    public void activate() {
+        this.active = true;
+    }
+
     // ✅ 계정 비활성화(삭제 대신)
     public void deactivate() {
         this.active = false;

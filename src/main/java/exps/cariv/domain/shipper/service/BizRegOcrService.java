@@ -32,6 +32,7 @@ public class BizRegOcrService {
     private final ObjectMapper mapper;
     private final S3ObjectReader s3Reader;
     private final BizRegParserService parser;
+    private final BizRegLlmRefiner llmRefiner;
     private final BizRegDocumentRepository bizRegRepo;
     private final ShipperRepository shipperRepo;
 
@@ -62,6 +63,8 @@ public class BizRegOcrService {
         }
 
         ParsedBizReg parsed = parser.parse(res);
+        // LLM 보정: 누락 필드가 있으면 LLM으로 채우기 시도
+        parsed = llmRefiner.refineIfNeeded(parsed, res);
         String tableHtmlJson;
         try {
             tableHtmlJson = UpstageTablePayloadBuilder.buildTableHtmlJson(mapper, res);

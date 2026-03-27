@@ -23,12 +23,12 @@ public class LlmFieldExtractor {
     private final String openaiApiKey;
 
     /** 429 재시도 설정 */
-    private static final int MAX_RETRIES = 3;
+    private static final int MAX_RETRIES = 2;
     private static final long BASE_DELAY_MS = 1000;   // 1초
     private static final long MAX_DELAY_MS = 10000;    // 10초
 
     /** 최소 요청 간격 (Tier 1: 50 RPM → ~1.2초 간격) */
-    private static final long MIN_REQUEST_INTERVAL_MS = 1300;
+    private static final long MIN_REQUEST_INTERVAL_MS = 800;
     private static final Object CLAUDE_LOCK = new Object();
     private static final Object GPT_LOCK = new Object();
     private static volatile long lastClaudeRequestTime = 0;
@@ -82,6 +82,70 @@ public class LlmFieldExtractor {
             - businessUsePeriod: 사업용 사용기간 (예: "2020-01-01 ~ 2023-05-15", 없으면 null)
             - issueDate: 발행 연월일 (YYYY-MM-DD)
             - issuer: 발행 기관 - 공백 없이 (예: "인천광역시계양구청장")
+
+            OCR 텍스트:
+            """;
+
+    // ── 신분증(주민등록증/운전면허증) 프롬프트 ──
+    private static final String ID_CARD_PROMPT = """
+            아래는 신분증(주민등록증 또는 운전면허증)을 OCR로 읽은 텍스트입니다.
+            이미지가 90°/180°/270° 회전되어 OCR 텍스트 순서가 뒤섞여 있을 수 있습니다.
+            텍스트 순서에 의존하지 말고, 내용(의미)을 기반으로 필드를 추출하세요.
+
+            다음 3개 필드만 추출하여 JSON으로 반환해주세요.
+
+            필드:
+            - holderName: 성명 (한글 이름, 2~5자). 반드시 사람 이름이어야 합니다. 지역명(부산광역시 등)이나 기관명은 절대 아닙니다.
+            - idNumber: 주민등록번호 (숫자6자리-숫자7자리 형식). 성명 바로 아래에 있습니다. OCR 텍스트에서 실제로 읽힌 값만 추출하세요. 절대 마스킹하지 마세요. 주의: 운전면허번호(XX-XX-XXXXXX-XX 형식)는 주민등록번호가 아닙니다. 혼동하지 마세요. **절대로 값을 추측하거나 임의로 만들어내지 마세요. OCR 텍스트에 없는 값은 null입니다.**
+            - idAddress: 주소 (시/도부터 전체 주소)
+
+            주의:
+            - 성명은 반드시 한국인 이름(2~5글자 한글)이어야 합니다. 도시명/기관명/직함은 이름이 아닙니다.
+            - 주민등록번호는 OCR 텍스트에 실제로 존재하는 숫자만 추출. 절대 임의의 값을 생성하지 마세요.
+            - 운전면허증의 경우: 성명 아래에 주민등록번호가 있고, 그 외에 운전면허번호(XX-XX-XXXXXX-XX)가 별도로 있습니다. 이 둘을 혼동하지 마세요.
+            - 주소에서 발급기관(OO시장, OO구청장, 경찰청장 등)은 제외
+            - 확인할 수 없는 필드는 반드시 null
+            - 반드시 순수 JSON만 반환
+
+            OCR 텍스트:
+            """;
+
+    // ── 사업자등록증 프롬프트 ──
+    private static final String BIZ_REG_PROMPT = """
+            아래는 사업자등록증을 OCR로 읽은 텍스트입니다.
+            다음 4개 필드만 추출하여 JSON으로 반환해주세요.
+
+            필드:
+            - companyName: 상호(법인명) (예: "세원무역", "현대글로비스(주)")
+            - representativeName: 대표자 성명만 (예: "홍길동"). 생년월일, 주민번호 등은 절대 포함하지 마세요.
+            - bizNumber: 사업자등록번호 (XXX-XX-XXXXX 형식)
+            - bizAddress: 사업장 소재지 (전체 주소)
+
+            주의:
+            - 대표자 필드에는 이름만 추출. "박영화 생년월일: 1967년 03월 27일" 같은 텍스트에서 "박영화"만 추출하세요.
+            - 사업자등록번호는 반드시 XXX-XX-XXXXX 형식으로 정규화
+            - 확인할 수 없는 필드는 null
+            - 반드시 순수 JSON만 반환
+
+            OCR 텍스트:
+            """;
+
+    // ── 매매계약서 프롬프트 ──
+    private static final String CONTRACT_PROMPT = """
+            아래는 자동차매매계약서를 OCR로 읽은 텍스트입니다.
+            다음 4개 필드만 추출하여 JSON으로 반환해주세요.
+
+            필드:
+            - registrationNo: 자동차등록번호 (예: "12가3456", "68마3644"). 숫자+한글+숫자 형식.
+            - vehicleType: 차종 (예: "승용", "승합", "화물", "특수")
+            - model: 차명 (예: "쏘나타", "K7", "아반떼", "투싼")
+            - chassisNo: 차대번호 (17자리 영문+숫자, 예: "KMHXX00XXXX000000")
+
+            주의:
+            - 자동차등록번호는 공백 없이 붙여서 반환 (예: "68마3644")
+            - 차대번호는 17자리 영숫자, 공백 없이 대문자로 반환
+            - 확인할 수 없는 필드는 null
+            - 반드시 순수 JSON만 반환
 
             OCR 텍스트:
             """;
@@ -295,7 +359,13 @@ public class LlmFieldExtractor {
     }
 
     private String getPrompt(String docType) {
-        return "deregistration".equals(docType) ? DEREGISTRATION_PROMPT : REGISTRATION_PROMPT;
+        return switch (docType) {
+            case "deregistration" -> DEREGISTRATION_PROMPT;
+            case "id_card" -> ID_CARD_PROMPT;
+            case "biz_registration" -> BIZ_REG_PROMPT;
+            case "contract" -> CONTRACT_PROMPT;
+            default -> REGISTRATION_PROMPT;
+        };
     }
 
     /**

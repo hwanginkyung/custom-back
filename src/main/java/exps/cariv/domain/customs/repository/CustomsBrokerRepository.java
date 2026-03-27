@@ -8,9 +8,15 @@ import java.util.Optional;
 
 public interface CustomsBrokerRepository extends JpaRepository<CustomsBroker, Long> {
 
+    List<CustomsBroker> findAllByCompanyIdOrderByNameAsc(Long companyId);
+
     List<CustomsBroker> findAllByCompanyIdAndActiveTrueOrderByNameAsc(Long companyId);
 
     Optional<CustomsBroker> findByIdAndCompanyIdAndActiveTrue(Long id, Long companyId);
+
+    Optional<CustomsBroker> findByCompanyIdAndNameIgnoreCaseAndActiveTrue(Long companyId, String name);
+
+    Optional<CustomsBroker> findByCompanyIdAndBusinessNo(Long companyId, String businessNo);
 
     boolean existsByCompanyIdAndNameIgnoreCaseAndActiveTrue(Long companyId, String name);
 

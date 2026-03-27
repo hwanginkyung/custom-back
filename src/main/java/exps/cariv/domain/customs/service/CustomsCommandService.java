@@ -56,8 +56,13 @@ public class CustomsCommandService {
         if (cr.getStatus() == CustomsRequestStatus.PROCESSING) {
             ShippingMethod method = parseShippingMethod(req.shippingMethod());
             CustomsBroker broker = resolveBrokerIfProvided(companyId, req.customsBrokerId());
+            boolean requirePhotosForContainer = shouldRequireContainerPhotos(broker, req.customsBrokerName());
             ContainerInfo containerInfo = buildContainerInfo(method, req.containerInfo());
-            List<String> containerPhotoKeys = normalizeContainerPhotoKeys(method, req.containerPhotoS3Keys(), true);
+            List<String> containerPhotoKeys = normalizeContainerPhotoKeys(
+                    method,
+                    req.containerPhotoS3Keys(),
+                    requirePhotosForContainer
+            );
 
             cr.updateForResend(
                     method,
@@ -73,13 +78,13 @@ public class CustomsCommandService {
             );
 
             requestVehicleRepo.deleteAllByCustomsRequestId(requestId);
-            upsertRequestItems(companyId, cr, method, req.vehicles(), true, false);
+            upsertRequestItems(companyId, cr, method, req.vehicles(), requirePhotosForContainer, false);
 
             List<CustomsRequestVehicle> items = requestVehicleRepo.findAllByCustomsRequestId(requestId);
             if (items.isEmpty()) {
                 throw new CustomException(ErrorCode.INVALID_INPUT, "전송할 차량이 없습니다.");
             }
-            validateRequiredPhotosForSubmit(cr, items);
+            validateRequiredPhotosForSubmit(cr, items, requirePhotosForContainer);
 
             for (CustomsRequestVehicle item : items) {
                 Vehicle vehicle = vehicleRepo.findActiveByIdAndCompanyId(item.getVehicleId(), companyId)
@@ -104,8 +109,13 @@ public class CustomsCommandService {
 
         ShippingMethod method = parseShippingMethod(req.shippingMethod());
         CustomsBroker broker = resolveBrokerIfProvided(companyId, req.customsBrokerId());
+        boolean requirePhotosForContainer = shouldRequireContainerPhotos(broker, req.customsBrokerName());
         ContainerInfo containerInfo = buildContainerInfo(method, req.containerInfo());
-        List<String> containerPhotoKeys = normalizeContainerPhotoKeys(method, req.containerPhotoS3Keys(), true);
+        List<String> containerPhotoKeys = normalizeContainerPhotoKeys(
+                method,
+                req.containerPhotoS3Keys(),
+                requirePhotosForContainer
+        );
 
         cr.updateDraft(
                 method,
@@ -121,13 +131,13 @@ public class CustomsCommandService {
         );
 
         requestVehicleRepo.deleteAllByCustomsRequestId(requestId);
-        upsertRequestItems(companyId, cr, method, req.vehicles(), true, false);
+        upsertRequestItems(companyId, cr, method, req.vehicles(), requirePhotosForContainer, false);
 
         List<CustomsRequestVehicle> items = requestVehicleRepo.findAllByCustomsRequestId(requestId);
         if (items.isEmpty()) {
             throw new CustomException(ErrorCode.INVALID_INPUT, "전송할 차량이 없습니다.");
         }
-        validateRequiredPhotosForSubmit(cr, items);
+        validateRequiredPhotosForSubmit(cr, items, requirePhotosForContainer);
 
         for (CustomsRequestVehicle item : items) {
             Vehicle vehicle = vehicleRepo.findActiveByIdAndCompanyId(item.getVehicleId(), companyId)
@@ -160,6 +170,7 @@ public class CustomsCommandService {
             );
         }
         CustomsBroker broker = resolveBrokerIfProvided(companyId, req.customsBrokerId());
+        boolean requirePhotosForContainer = shouldRequireContainerPhotos(broker, req.customsBrokerName());
 
         // 기존 차량 아이템 삭제
         requestVehicleRepo.deleteAllByCustomsRequestId(requestId);
@@ -169,7 +180,11 @@ public class CustomsCommandService {
 
         // 컨테이너 정보
         ContainerInfo containerInfo = buildContainerInfo(method, req.containerInfo());
-        List<String> containerPhotoKeys = normalizeContainerPhotoKeys(method, req.containerPhotoS3Keys(), true);
+        List<String> containerPhotoKeys = normalizeContainerPhotoKeys(
+                method,
+                req.containerPhotoS3Keys(),
+                requirePhotosForContainer
+        );
 
         // managed 엔티티 직접 업데이트 (detached entity + audit 필드 유실 방지)
         existing.updateForResend(
@@ -186,7 +201,7 @@ public class CustomsCommandService {
         );
 
         // 새 차량 아이템 생성 (resend 에서는 사진 필수)
-        upsertRequestItems(companyId, existing, method, req.vehicles(), true, true);
+        upsertRequestItems(companyId, existing, method, req.vehicles(), requirePhotosForContainer, true);
 
         return existing.getId();
     }
@@ -313,7 +328,13 @@ public class CustomsCommandService {
         }
     }
 
-    private void validateRequiredPhotosForSubmit(CustomsRequest request, List<CustomsRequestVehicle> items) {
+    private void validateRequiredPhotosForSubmit(CustomsRequest request,
+                                                 List<CustomsRequestVehicle> items,
+                                                 boolean requiredForContainer) {
+        if (!requiredForContainer) {
+            return;
+        }
+
         if (request.getShippingMethod() != ShippingMethod.CONTAINER) {
             return;
         }
@@ -374,6 +395,13 @@ public class CustomsCommandService {
             throw new CustomException(ErrorCode.INVALID_INPUT, "CONTAINER 선적에서는 차량별 사진이 최소 1장 필요합니다.");
         }
         return keys;
+    }
+
+    private boolean shouldRequireContainerPhotos(CustomsBroker broker, String customsBrokerName) {
+        if (broker != null) {
+            return true;
+        }
+        return customsBrokerName != null && !customsBrokerName.isBlank();
     }
 
     private List<String> normalizePhotoKeys(List<String> rawKeys, int max, String fieldName) {

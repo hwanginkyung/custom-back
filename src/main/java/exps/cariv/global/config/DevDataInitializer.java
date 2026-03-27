@@ -1,25 +1,12 @@
 package exps.cariv.global.config;
 
+import exps.cariv.domain.customs.entity.CustomsBroker;
+import exps.cariv.domain.customs.repository.CustomsBrokerRepository;
 import exps.cariv.domain.login.entity.Company;
 import exps.cariv.domain.login.entity.User;
 import exps.cariv.domain.login.entity.enumType.Role;
 import exps.cariv.domain.login.repository.CompanyRepository;
 import exps.cariv.domain.login.repository.UserRepository;
-import exps.cariv.domain.customs.entity.CustomsBroker;
-import exps.cariv.domain.customs.repository.CustomsBrokerRepository;
-import exps.cariv.domain.document.entity.DocumentRefType;
-import exps.cariv.domain.document.entity.DocumentType;
-import exps.cariv.domain.document.repository.DocumentRepository;
-import exps.cariv.domain.shipper.entity.Shipper;
-import exps.cariv.domain.shipper.entity.ShipperDocument;
-import exps.cariv.domain.shipper.entity.ShipperType;
-import exps.cariv.domain.shipper.repository.ShipperRepository;
-import exps.cariv.domain.shipper.repository.ShipperDocumentRepository;
-import exps.cariv.domain.vehicle.entity.OwnerType;
-import exps.cariv.domain.vehicle.entity.TransmissionType;
-import exps.cariv.domain.vehicle.entity.Vehicle;
-import exps.cariv.domain.vehicle.entity.VehicleStage;
-import exps.cariv.domain.vehicle.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
@@ -28,7 +15,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-import java.time.LocalDate;
 import java.util.List;
 
 @Configuration
@@ -37,288 +23,178 @@ import java.util.List;
 @Slf4j
 public class DevDataInitializer {
 
-    private static final String DEFAULT_LOGIN_ID = "admin";
     private static final String DEFAULT_PASSWORD = "admin1234!";
+
+    private static final CustomsBrokerSeed DEFAULT_CUSTOMS_BROKER = new CustomsBrokerSeed(
+            "진솔관세법인",
+            "02-555-0101",
+            "110-81-10001",
+            "jinsol-customs@demo.local"
+    );
+
+    private static final List<AdminSeed> ADMIN_SEEDS = List.of(
+            new AdminSeed("admin", "admin@cariv.local", "Cariv Demo Company", "Demo Owner"),
+            new AdminSeed("admin2", "admin2@cariv.local", "Cariv Admin2 Company", "Admin2 Owner"),
+            new AdminSeed("admin3", "admin3@cariv.local", "Cariv Admin3 Company", "Admin3 Owner")
+    );
 
     private final CompanyRepository companyRepository;
     private final UserRepository userRepository;
-    private final VehicleRepository vehicleRepository;
-    private final ShipperRepository shipperRepository;
-    private final DocumentRepository documentRepository;
-    private final ShipperDocumentRepository shipperDocumentRepository;
     private final CustomsBrokerRepository customsBrokerRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Bean
     public CommandLineRunner seedDevData() {
         return args -> {
-            User admin = userRepository.findByLoginId(DEFAULT_LOGIN_ID).orElse(null);
+            int createdAdmins = 0;
+            int updatedAdmins = 0;
+            int changedBrokers = 0;
 
-            Company company = (admin != null)
-                    ? companyRepository.findById(admin.getCompanyId()).orElseGet(() -> createDefaultCompany())
-                    : companyRepository.findAll().stream().findFirst().orElseGet(this::createDefaultCompany);
+            for (AdminSeed seed : ADMIN_SEEDS) {
+                Company company = resolveOrCreateCompany(seed.companyName(), seed.ownerName());
+                UpsertResult result = upsertAdminUser(seed, company.getId());
+                if (result == UpsertResult.CREATED) {
+                    createdAdmins++;
+                } else if (result == UpsertResult.UPDATED) {
+                    updatedAdmins++;
+                }
 
-            if (admin == null) {
-                admin = User.builder()
-                        .loginId(DEFAULT_LOGIN_ID)
-                        .email("admin@cariv.local")
-                        .passwordHash(passwordEncoder.encode(DEFAULT_PASSWORD))
-                        .active(true)
-                        .role(Role.ADMIN)
-                        .build();
-                admin.setCompanyId(company.getId());
-                admin = userRepository.save(admin);
+                int brokerChanges = seedCustomsBrokers(company.getId());
+                changedBrokers += brokerChanges;
+
+                log.info("[DevDataInitializer] ensured admin loginId={} companyId={} companyName={} adminResult={} brokerChanges={}",
+                        seed.loginId(),
+                        company.getId(),
+                        company.getName(),
+                        result,
+                        brokerChanges);
             }
 
-            int seededShippers = seedShippers(company.getId());
-            int seededVehicles = seedVehicles(company.getId());
-            int seededIdCards = seedShipperIdCards(company.getId(), admin.getId());
-            int seededBrokers = seedCustomsBrokers(company.getId());
-
-            log.info("[DevDataInitializer] seeded default admin loginId={} companyId={}",
-                    DEFAULT_LOGIN_ID, company.getId());
-            log.info("[DevDataInitializer] seeded demo shippers count={} companyId={}",
-                    seededShippers, company.getId());
-            log.info("[DevDataInitializer] seeded demo vehicles count={} companyId={}",
-                    seededVehicles, company.getId());
-            log.info("[DevDataInitializer] seeded shipper id-card docs count={} companyId={}",
-                    seededIdCards, company.getId());
-            log.info("[DevDataInitializer] seeded customs brokers count={} companyId={}",
-                    seededBrokers, company.getId());
+            log.info("[DevDataInitializer] completed targetAdmins={} created={} updated={} brokerChanges={}",
+                    ADMIN_SEEDS.stream().map(AdminSeed::loginId).toList(),
+                    createdAdmins,
+                    updatedAdmins,
+                    changedBrokers);
         };
     }
 
-    private Company createDefaultCompany() {
-        return companyRepository.save(
-                Company.builder()
-                        .name("Cariv Demo Company")
-                        .ownerName("Demo Owner")
-                        .build()
-        );
+    private Company resolveOrCreateCompany(String companyName, String ownerName) {
+        return companyRepository.findAll().stream()
+                .filter(c -> c.getName() != null && c.getName().equalsIgnoreCase(companyName))
+                .findFirst()
+                .orElseGet(() -> companyRepository.save(
+                        Company.builder()
+                                .name(companyName)
+                                .ownerName(ownerName)
+                                .build()
+                ));
     }
 
-    private int seedShippers(Long companyId) {
-        List<ShipperSeed> seeds = List.of(
-                new ShipperSeed("해피카", "DEALER", ShipperType.CORPORATE_BUSINESS, "010-1234-5678", "123-45-67890", "서울특별시 강남구 테헤란로 100"),
-                new ShipperSeed("스마트트레이드", "DEALER", ShipperType.CORPORATE_BUSINESS, "010-9876-5432", "234-56-78901", "인천광역시 연수구 센트럴로 200"),
-                new ShipperSeed("베스트모터스", "DEALER", ShipperType.CORPORATE_BUSINESS, "010-5555-1234", "345-67-89012", "부산광역시 해운대구 센텀중앙로 300")
-        );
+    private UpsertResult upsertAdminUser(AdminSeed seed, Long companyId) {
+        User byEmail = userRepository.findByEmailIgnoreCase(seed.email()).orElse(null);
+        User byLoginId = userRepository.findByLoginId(seed.loginId()).orElse(null);
+        User user = byEmail != null ? byEmail : byLoginId;
 
-        int created = 0;
-        for (ShipperSeed s : seeds) {
-            Shipper shipper = shipperRepository.findTopByCompanyIdAndNameOrderByIdDesc(companyId, s.name())
-                    .orElse(null);
-
-            if (shipper == null) {
-                shipper = Shipper.builder()
-                        .name(s.name())
-                        .type(s.type())
-                        .shipperType(s.shipperType())
-                        .phone(s.phone())
-                        .businessNumber(s.businessNumber())
-                        .address(s.address())
-                        .build();
-                shipper.setCompanyId(companyId);
-                shipperRepository.save(shipper);
-                created++;
-                continue;
-            }
-
-            // 기존 더미 데이터도 출력 필수 항목이 채워지도록 보정
-            shipper.update(s.name(), s.type(), s.shipperType(), s.phone(), s.businessNumber(), s.address());
-            shipperRepository.save(shipper);
-        }
-        return created;
-    }
-
-    private int seedShipperIdCards(Long companyId, Long uploadedByUserId) {
-        int created = 0;
-        List<Shipper> shippers = shipperRepository.findAllByCompanyIdAndActiveTrue(companyId);
-
-        for (Shipper shipper : shippers) {
-            boolean exists = documentRepository.findTopByCompanyIdAndRefTypeAndRefIdAndTypeOrderByUploadedAtDescIdDesc(
-                    companyId, DocumentRefType.SHIPPER, shipper.getId(), DocumentType.ID_CARD
-            ).isPresent();
-            if (exists) {
-                continue;
-            }
-
-            String s3Key = "dev-placeholder/shipper/" + shipper.getId() + "/id-card.jpg";
-            ShipperDocument idCardDoc = ShipperDocument.createNew(
-                    companyId,
-                    uploadedByUserId,
-                    shipper.getId(),
-                    DocumentType.ID_CARD,
-                    s3Key,
-                    "seed_id_card_" + shipper.getId() + ".jpg",
-                    "image/jpeg",
-                    1024L
-            );
-            shipperDocumentRepository.save(idCardDoc);
-            created++;
-        }
-
-        return created;
-    }
-
-    private int seedVehicles(Long companyId) {
-        List<VehicleSeed> seeds = List.of(
-                new VehicleSeed(
-                        "KNAG6412BNA193171", "175로3480", VehicleStage.BEFORE_DEREGISTRATION,
-                        "K5", 2022, "중형 승용", "휘발유", "오토", 1598,
-                        "해피카", OwnerType.DEALER_CORPORATE, "홍길동", "900101-1234567",
-                        29388092L, LocalDate.of(2025, 11, 21)
-                ),
-                new VehicleSeed(
-                        "KNAG6412BNA193172", "234가5678", VehicleStage.BEFORE_REPORT,
-                        "AVANTE", 2021, "준중형 승용", "휘발유", "오토", 1591,
-                        "스마트트레이드", OwnerType.DEALER_CORPORATE, "김영희", "880305-2234567",
-                        17800000L, LocalDate.of(2025, 10, 5)
-                ),
-                new VehicleSeed(
-                        "KNAG6412BNA193173", "321나4321", VehicleStage.BEFORE_CERTIFICATE,
-                        "SORENTO", 2020, "SUV", "디젤", "오토", 2151,
-                        "베스트모터스", OwnerType.DEALER_CORPORATE, "박민수", "870722-1234567",
-                        25200000L, LocalDate.of(2025, 9, 10)
-                ),
-                new VehicleSeed(
-                        "KNAG6412BNA193174", "876다1234", VehicleStage.COMPLETED,
-                        "GRANDEUR", 2019, "대형 승용", "휘발유", "오토", 2497,
-                        "해피카", OwnerType.DEALER_CORPORATE, "최수진", "860914-2234567",
-                        21400000L, LocalDate.of(2025, 8, 2)
-                ),
-                new VehicleSeed(
-                        "KNAG6412BNA193175", "111라2222", VehicleStage.BEFORE_REPORT,
-                        "MORNING", 2018, "경형 승용", "휘발유", "오토", 998,
-                        "스마트트레이드", OwnerType.DEALER_CORPORATE, "이현우", "920210-1234567",
-                        6800000L, LocalDate.of(2025, 7, 15)
-                ),
-                new VehicleSeed(
-                        "KMJYB371BNU017783", "459거7783", VehicleStage.BEFORE_DEREGISTRATION,
-                        "PORTER2", 2021, "소형 화물", "디젤", "수동", 2497,
-                        "해피카", OwnerType.DEALER_CORPORATE, "정다은", "910412-2234567",
-                        18900000L, LocalDate.of(2025, 12, 20)
-                )
-        );
-
-        int created = 0;
-        for (VehicleSeed s : seeds) {
-            Long shipperId = shipperRepository.findTopByCompanyIdAndNameOrderByIdDesc(companyId, s.shipperName())
-                    .map(Shipper::getId)
-                    .orElse(null);
-
-            Vehicle existing = vehicleRepository
-                    .findTopByCompanyIdAndVinAndDeletedFalseOrderByIdDesc(companyId, s.vin())
-                    .orElse(null);
-            if (existing != null) {
-                existing.applyFullUpdate(
-                        null,
-                        s.shipperName(),
-                        shipperId,
-                        s.ownerType(),
-                        s.purchasePrice(),
-                        s.purchaseDate(),
-                        null,
-                        null
-                );
-                vehicleRepository.save(existing);
-                continue;
-            }
-
-            Vehicle v = Vehicle.builder()
-                    .vin(s.vin())
-                    .vehicleNo(s.vehicleNo())
-                    .stage(s.stage())
-                    .modelName(s.modelName())
-                    .modelYear(s.modelYear())
-                    .carType(s.carType())
-                    .fuelType(s.fuelType())
-                    .displacement(s.displacement())
-                    .ownerName(s.ownerName())
-                    .ownerId(s.ownerId())
-                    .shipperName(s.shipperName())
-                    .shipperId(shipperId)
-                    .ownerType(s.ownerType())
-                    .transmission(parseTransmission(s.transmission()))
-                    .purchasePrice(s.purchasePrice())
-                    .purchaseDate(s.purchaseDate())
+        if (user == null) {
+            User created = User.builder()
+                    .loginId(seed.loginId())
+                    .email(seed.email())
+                    .passwordHash(passwordEncoder.encode(DEFAULT_PASSWORD))
+                    .active(true)
+                    .role(Role.ADMIN)
                     .build();
-            v.setCompanyId(companyId);
-            vehicleRepository.save(v);
-            created++;
+            created.setCompanyId(companyId);
+            userRepository.save(created);
+            return UpsertResult.CREATED;
         }
-        return created;
+
+        boolean dirty = false;
+        if (user.getEmail() == null || !user.getEmail().equalsIgnoreCase(seed.email())) {
+            user.changeEmail(seed.email());
+            dirty = true;
+        }
+        if (!user.isActive()) {
+            user.activate();
+            dirty = true;
+        }
+        if (user.getRole() != Role.ADMIN && user.getRole() != Role.MASTER) {
+            user.changeRole(Role.ADMIN);
+            dirty = true;
+        }
+        if (user.getCompanyId() == null || !user.getCompanyId().equals(companyId)) {
+            user.setCompanyId(companyId);
+            dirty = true;
+        }
+
+        if (dirty) {
+            userRepository.save(user);
+            return UpsertResult.UPDATED;
+        }
+
+        return UpsertResult.UNCHANGED;
     }
 
     private int seedCustomsBrokers(Long companyId) {
-        List<CustomsBrokerSeed> seeds = List.of(
-                new CustomsBrokerSeed("서울관세법인", "02-555-0101", "110-81-10001", "seoul-customs@demo.local"),
-                new CustomsBrokerSeed("한빛관세사무소", "032-777-0202", "122-86-20002", "hanbit-customs@demo.local"),
-                new CustomsBrokerSeed("태평양관세법인", "051-999-0303", "214-81-30003", "pacific-customs@demo.local")
-        );
+        CustomsBrokerSeed seed = DEFAULT_CUSTOMS_BROKER;
 
-        List<CustomsBroker> existing = customsBrokerRepository.findAllByCompanyIdAndActiveTrueOrderByNameAsc(companyId);
-        int created = 0;
+        List<CustomsBroker> brokers = customsBrokerRepository.findAllByCompanyIdOrderByNameAsc(companyId);
+        CustomsBroker target = customsBrokerRepository.findByCompanyIdAndBusinessNo(companyId, seed.businessNo())
+                .orElseGet(() -> brokers.stream()
+                        .filter(b -> b.getName().equalsIgnoreCase(seed.name()))
+                        .findFirst()
+                        .orElse(null));
 
-        for (CustomsBrokerSeed s : seeds) {
-            boolean alreadyExists = existing.stream()
-                    .anyMatch(b -> b.getName().equalsIgnoreCase(s.name()));
-            if (alreadyExists) continue;
-
-            CustomsBroker broker = CustomsBroker.builder()
-                    .name(s.name())
-                    .phone(s.phone())
-                    .businessNo(s.businessNo())
-                    .email(s.email())
+        int changed = 0;
+        if (target == null) {
+            target = CustomsBroker.builder()
+                    .name(seed.name())
+                    .phone(seed.phone())
+                    .businessNo(seed.businessNo())
+                    .email(seed.email())
                     .active(true)
                     .build();
-            broker.setCompanyId(companyId);
-            customsBrokerRepository.save(broker);
-            created++;
+            target.setCompanyId(companyId);
+            target = customsBrokerRepository.save(target);
+            changed++;
+        } else {
+            target.update(seed.name(), seed.phone(), seed.email());
+            target.activate();
+            customsBrokerRepository.save(target);
         }
 
-        return created;
+        for (CustomsBroker broker : brokers) {
+            if (broker.getId().equals(target.getId())) {
+                continue;
+            }
+            if (broker.isActive()) {
+                broker.deactivate();
+                customsBrokerRepository.save(broker);
+                changed++;
+            }
+        }
+
+        return changed;
     }
-
-    private record ShipperSeed(
-            String name,
-            String type,
-            ShipperType shipperType,
-            String phone,
-            String businessNumber,
-            String address
-    ) {}
-
-    private record VehicleSeed(
-            String vin,
-            String vehicleNo,
-            VehicleStage stage,
-            String modelName,
-            Integer modelYear,
-            String carType,
-            String fuelType,
-            String transmission,
-            Integer displacement,
-            String shipperName,
-            OwnerType ownerType,
-            String ownerName,
-            String ownerId,
-            Long purchasePrice,
-            LocalDate purchaseDate
-    ) {}
 
     private record CustomsBrokerSeed(
             String name,
             String phone,
             String businessNo,
             String email
-    ) {}
+    ) {
+    }
 
-    private TransmissionType parseTransmission(String raw) {
-        try {
-            return TransmissionType.from(raw);
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
+    private record AdminSeed(
+            String loginId,
+            String email,
+            String companyName,
+            String ownerName
+    ) {
+    }
+
+    private enum UpsertResult {
+        CREATED,
+        UPDATED,
+        UNCHANGED
     }
 }

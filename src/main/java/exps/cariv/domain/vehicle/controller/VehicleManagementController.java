@@ -12,9 +12,11 @@ import exps.cariv.domain.contract.service.ContractQueryService;
 import exps.cariv.domain.contract.service.ContractUploadService;
 import exps.cariv.domain.registration.dto.request.RegistrationSnapshotUpdateRequest;
 import exps.cariv.domain.registration.dto.response.RegistrationDocumentResponse;
+import exps.cariv.domain.vehicle.dto.request.OwnerIdCardSnapshotUpdateRequest;
 import exps.cariv.domain.vehicle.dto.response.*;
 import exps.cariv.domain.vehicle.service.VehicleCommandService;
 import exps.cariv.domain.vehicle.service.VehicleDocumentService;
+import exps.cariv.domain.vehicle.service.RefundDocumentService;
 import exps.cariv.domain.vehicle.service.VehicleExcelService;
 import exps.cariv.domain.vehicle.service.VehicleQueryService;
 import exps.cariv.global.security.CustomUserDetails;
@@ -35,6 +37,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
+
+import org.springframework.http.HttpHeaders;
 
 @RestController
 @RequestMapping("/api/vehicle")
@@ -46,6 +51,7 @@ public class VehicleManagementController {
     private final VehicleQueryService queryService;
     private final VehicleDocumentService documentService;
     private final VehicleExcelService excelService;
+    private final RefundDocumentService refundDocumentService;
     private final ContractUploadService contractUploadService;
     private final ContractQueryService contractQueryService;
     private final ContractCommandService contractCommandService;
@@ -65,12 +71,28 @@ public class VehicleManagementController {
             @RequestParam(required = false) String shipperName,
             @RequestParam(name = "from", required = false) LocalDate from,
             @RequestParam(name = "to", required = false) LocalDate to,
+            @RequestParam(required = false) String purchaseMonth,  // yyyy-MM (매입일 기준 필터)
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
     ) {
+        // purchaseMonth가 지정되면 매입일 기준 날짜 범위 설정 (다중 월 콤마 지원)
+        LocalDate purchaseFrom = null;
+        LocalDate purchaseTo = null;
+        if (purchaseMonth != null && !purchaseMonth.isBlank()) {
+            String[] months = purchaseMonth.split(",");
+            for (String m : months) {
+                YearMonth ym = YearMonth.parse(m.trim(), DateTimeFormatter.ofPattern("yyyy-MM"));
+                LocalDate mFrom = ym.atDay(1);
+                LocalDate mTo = ym.atEndOfMonth();
+                if (purchaseFrom == null || mFrom.isBefore(purchaseFrom)) purchaseFrom = mFrom;
+                if (purchaseTo == null || mTo.isAfter(purchaseTo)) purchaseTo = mTo;
+            }
+        }
+
         VehicleListRequest req = new VehicleListRequest(
                 stage, keyword, shipperName,
-                from, to, page, size
+                from, to, purchaseFrom, purchaseTo,
+                page, size
         );
         return ResponseEntity.ok(queryService.list(me.getCompanyId(), req));
     }
@@ -111,6 +133,132 @@ public class VehicleManagementController {
     }
 
     // ───────────────────────────────────────────────
+    // 1-1-1. 차량 목록 엑셀 미리보기 (GET /api/vehicle/management/excel/preview)
+    // ───────────────────────────────────────────────
+    @GetMapping("/management/excel/preview")
+    @Operation(
+            summary = "차량 목록 엑셀 미리보기 (JSON)",
+            description = "엑셀과 동일한 데이터를 JSON 배열로 반환하여 미리보기에 사용합니다."
+    )
+    public ResponseEntity<java.util.List<VehicleListResponse>> previewExcel(
+            @AuthenticationPrincipal CustomUserDetails me,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to
+    ) {
+        LocalDate dateFrom = (from != null && !from.isBlank()) ? LocalDate.parse(from) : null;
+        LocalDate dateTo = (to != null && !to.isBlank()) ? LocalDate.parse(to) : null;
+
+        VehicleListRequest req = new VehicleListRequest(
+                null, null, null,
+                dateFrom, dateTo, null, null,
+                0, 10000
+        );
+        Page<VehicleListResponse> page = queryService.list(me.getCompanyId(), req);
+        return ResponseEntity.ok(page.getContent());
+    }
+
+    // ───────────────────────────────────────────────
+    // 1-2. 환급용 엑셀 내보내기 (GET /api/vehicle/management/refund-excel)
+    // ───────────────────────────────────────────────
+    @GetMapping("/management/refund-excel")
+    @Operation(
+            summary = "환급용 엑셀 내보내기",
+            description = "월별(매입일 기준) 개인/그밖의사업자 시트 분리 엑셀을 다운로드합니다. months 파라미터로 여러 월 지정 가능."
+    )
+    public ResponseEntity<byte[]> exportRefundExcel(
+            @AuthenticationPrincipal CustomUserDetails me,
+            @RequestParam(required = false) String month,     // 단일 yyyy-MM (하위호환)
+            @RequestParam(required = false) String months,    // 다중 yyyy-MM,yyyy-MM,...
+            @RequestParam String refundType                   // "individual" 또는 "others" (하위호환: "unapplied"/"applied")
+    ) throws IOException {
+        // 다중 월 파싱
+        List<YearMonth> yearMonths = new java.util.ArrayList<>();
+        String monthsParam = (months != null && !months.isBlank()) ? months : month;
+        if (monthsParam != null && !monthsParam.isBlank()) {
+            for (String m : monthsParam.split(",")) {
+                yearMonths.add(YearMonth.parse(m.trim(), DateTimeFormatter.ofPattern("yyyy-MM")));
+            }
+        }
+        if (yearMonths.isEmpty()) {
+            yearMonths.add(YearMonth.now());
+        }
+
+        // refundType 매핑: 하위호환 + 새 방식
+        boolean appliedOnly = "applied".equalsIgnoreCase(refundType) || "others".equalsIgnoreCase(refundType);
+
+        byte[] excelBytes = excelService.exportRefundExcel(me.getCompanyId(), yearMonths, refundType);
+
+        String label = "individual".equalsIgnoreCase(refundType) ? "개인" : "그밖의사업자";
+        String monthLabel = yearMonths.size() == 1
+                ? yearMonths.get(0).format(DateTimeFormatter.ofPattern("yyyy-MM"))
+                : yearMonths.get(0).format(DateTimeFormatter.ofPattern("yyyy-MM")) + "_외" + (yearMonths.size() - 1) + "개월";
+        String fileName = "환급_" + label + "_" + monthLabel + ".xlsx";
+        String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8)
+                .replace("+", "%20");
+
+        return ResponseEntity.ok()
+                .header("Content-Disposition",
+                        "attachment; filename*=UTF-8''" + encodedFileName)
+                .header("Content-Type",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                .body(excelBytes);
+    }
+
+    // ───────────────────────────────────────────────
+    // 1-2-1. 환급 엑셀 미리보기 (GET /api/vehicle/management/refund-excel/preview)
+    // ───────────────────────────────────────────────
+    @GetMapping("/management/refund-excel/preview")
+    @Operation(
+            summary = "환급 엑셀 미리보기 (JSON)",
+            description = "환급 엑셀과 동일한 데이터를 JSON 배열로 반환하여 미리보기에 사용합니다."
+    )
+    public ResponseEntity<java.util.List<exps.cariv.domain.vehicle.dto.response.RefundExcelPreviewRow>> previewRefundExcel(
+            @AuthenticationPrincipal CustomUserDetails me,
+            @RequestParam(required = false) String months,
+            @RequestParam String refundType
+    ) {
+        List<YearMonth> yearMonths = new java.util.ArrayList<>();
+        if (months != null && !months.isBlank()) {
+            for (String m : months.split(",")) {
+                yearMonths.add(YearMonth.parse(m.trim(), DateTimeFormatter.ofPattern("yyyy-MM")));
+            }
+        }
+        if (yearMonths.isEmpty()) {
+            yearMonths.add(YearMonth.now());
+        }
+
+        return ResponseEntity.ok(
+                excelService.previewRefundExcel(me.getCompanyId(), yearMonths, refundType)
+        );
+    }
+
+    // ───────────────────────────────────────────────
+    // 1-3. 환급 관련서류 ZIP 다운로드 (GET /api/vehicle/management/refund-docs)
+    // ───────────────────────────────────────────────
+    @GetMapping("/management/refund-docs")
+    @Operation(
+            summary = "환급 관련서류 ZIP 다운로드",
+            description = "월별(매입일 기준) 차량 엑셀 + 말소증 + 매매계약서를 ZIP으로 다운로드합니다."
+    )
+    public ResponseEntity<byte[]> exportRefundDocs(
+            @AuthenticationPrincipal CustomUserDetails me,
+            @RequestParam String month  // yyyy-MM 형식
+    ) throws IOException {
+        YearMonth yearMonth = YearMonth.parse(month, DateTimeFormatter.ofPattern("yyyy-MM"));
+        byte[] zipBytes = refundDocumentService.generateRefundDocsZip(me.getCompanyId(), yearMonth);
+
+        String fileName = "환급_관련서류_" + yearMonth.format(DateTimeFormatter.ofPattern("yyyy-MM")) + ".zip";
+        String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8)
+                .replace("+", "%20");
+
+        return ResponseEntity.ok()
+                .header("Content-Disposition",
+                        "attachment; filename*=UTF-8''" + encodedFileName)
+                .header("Content-Type", "application/zip")
+                .body(zipBytes);
+    }
+
+    // ───────────────────────────────────────────────
     // 2. 자동차등록증 업로드 → OCR (POST /api/vehicle/upload/reg)
     // ───────────────────────────────────────────────
     @PostMapping(value = "/upload/reg", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -142,6 +290,54 @@ public class VehicleManagementController {
         return ResponseEntity.ok(
                 documentService.uploadOwnerIdCard(me.getCompanyId(), me.getUserId(), file)
         );
+    }
+
+    // ───────────────────────────────────────────────
+    // 2-0-1. 신분증 OCR 스냅샷 조회 (GET /api/vehicle/upload/id-card/{documentId}/snapshot)
+    // ───────────────────────────────────────────────
+    @GetMapping("/upload/id-card/{documentId}/snapshot")
+    @Operation(
+            summary = "신분증 OCR 스냅샷 조회",
+            description = "documentId 기준으로 신분증 OCR 스냅샷과 인식 결과를 조회합니다."
+    )
+    public ResponseEntity<OwnerIdCardDocumentResponse> getOwnerIdCardSnapshot(
+            @AuthenticationPrincipal CustomUserDetails me,
+            @PathVariable Long documentId
+    ) {
+        return ResponseEntity.ok(
+                documentService.getOwnerIdCardSnapshot(me.getCompanyId(), documentId)
+        );
+    }
+
+    @GetMapping("/upload/id-card/jobs/{jobId}/snapshot")
+    @Operation(
+            summary = "신분증 OCR 스냅샷 조회 (jobId)",
+            description = "jobId 기준으로 신분증 OCR 스냅샷과 인식 결과를 조회합니다."
+    )
+    public ResponseEntity<OwnerIdCardDocumentResponse> getOwnerIdCardSnapshotByJobId(
+            @AuthenticationPrincipal CustomUserDetails me,
+            @PathVariable Long jobId
+    ) {
+        return ResponseEntity.ok(
+                documentService.getOwnerIdCardSnapshotByJobId(me.getCompanyId(), jobId)
+        );
+    }
+
+    // ───────────────────────────────────────────────
+    // 2-0-2. 신분증 OCR 스냅샷 수정 저장 (PATCH /api/vehicle/upload/id-card/{documentId}/snapshot)
+    // ───────────────────────────────────────────────
+    @PatchMapping("/upload/id-card/{documentId}/snapshot")
+    @Operation(
+            summary = "신분증 OCR 스냅샷 수정 저장",
+            description = "신분증 OCR 인식 결과를 documentId 기준으로 수동 수정 저장합니다."
+    )
+    public ResponseEntity<Void> updateOwnerIdCardSnapshot(
+            @AuthenticationPrincipal CustomUserDetails me,
+            @PathVariable Long documentId,
+            @Valid @RequestBody OwnerIdCardSnapshotUpdateRequest req
+    ) {
+        documentService.updateOwnerIdCardSnapshot(me.getCompanyId(), documentId, req);
+        return ResponseEntity.ok().build();
     }
 
     // ───────────────────────────────────────────────
@@ -391,5 +587,53 @@ public class VehicleManagementController {
         return ResponseEntity.ok(
                 new VehicleDeleteResponse(vehicleId, true, "차량이 삭제되었습니다.")
         );
+    }
+
+    // ───────────────────────────────────────────────
+    // 9. 첨부파일 미리보기 (GET /api/vehicle/detail/{vehicleId}/attachments/{slotKey}/preview)
+    // ───────────────────────────────────────────────
+    @GetMapping("/detail/{vehicleId}/attachments/{slotKey}/preview")
+    @Operation(
+            summary = "첨부파일 미리보기",
+            description = "차량 상세의 슬롯 키로 첨부파일을 인라인(미리보기)으로 반환합니다."
+    )
+    public ResponseEntity<byte[]> previewAttachment(
+            @AuthenticationPrincipal CustomUserDetails me,
+            @PathVariable Long vehicleId,
+            @PathVariable String slotKey
+    ) {
+        VehicleQueryService.AttachmentFileData data =
+                queryService.loadAttachmentFile(me.getCompanyId(), vehicleId, slotKey);
+        String encodedFilename = URLEncoder.encode(data.filename(), StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "inline; filename*=UTF-8''" + encodedFilename)
+                .header(HttpHeaders.CONTENT_TYPE, data.contentType())
+                .body(data.bytes());
+    }
+
+    // ───────────────────────────────────────────────
+    // 10. 첨부파일 다운로드 (GET /api/vehicle/detail/{vehicleId}/attachments/{slotKey}/download)
+    // ───────────────────────────────────────────────
+    @GetMapping("/detail/{vehicleId}/attachments/{slotKey}/download")
+    @Operation(
+            summary = "첨부파일 다운로드",
+            description = "차량 상세의 슬롯 키로 첨부파일을 다운로드(attachment)로 반환합니다."
+    )
+    public ResponseEntity<byte[]> downloadAttachment(
+            @AuthenticationPrincipal CustomUserDetails me,
+            @PathVariable Long vehicleId,
+            @PathVariable String slotKey
+    ) {
+        VehicleQueryService.AttachmentFileData data =
+                queryService.loadAttachmentFile(me.getCompanyId(), vehicleId, slotKey);
+        String encodedFilename = URLEncoder.encode(data.filename(), StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename*=UTF-8''" + encodedFilename)
+                .header(HttpHeaders.CONTENT_TYPE, data.contentType())
+                .body(data.bytes());
     }
 }

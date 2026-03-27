@@ -64,10 +64,20 @@ public class ShipperQueryService {
                 .orElseThrow(() -> new CustomException(ErrorCode.SHIPPER_NOT_FOUND));
 
         List<DocumentType> requiredTypes = requiredTypes(shipper.getShipperType());
-        // 단일 쿼리로 존재 타입 조회
-        Set<DocumentType> existingTypes = documentRepo.findExistingTypes(
-                companyId, DocumentRefType.SHIPPER, shipperId, requiredTypes
-        );
+
+        // 필수 타입 + BIZ_ID_COMBINED 까지 한 번에 조회
+        java.util.HashSet<DocumentType> lookupTypes = new java.util.HashSet<>(requiredTypes);
+        lookupTypes.add(DocumentType.BIZ_ID_COMBINED);
+
+        Set<DocumentType> existingTypes = new java.util.HashSet<>(documentRepo.findExistingTypes(
+                companyId, DocumentRefType.SHIPPER, shipperId, lookupTypes
+        ));
+
+        // 합본(BIZ_ID_COMBINED)이 있으면 사업자등록증 + 대표자 신분증 충족 처리
+        if (existingTypes.contains(DocumentType.BIZ_ID_COMBINED)) {
+            existingTypes.add(DocumentType.BIZ_REGISTRATION);
+            existingTypes.add(DocumentType.ID_CARD);
+        }
 
         List<String> missing = requiredTypes.stream()
                 .filter(type -> !existingTypes.contains(type))

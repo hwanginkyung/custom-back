@@ -38,6 +38,7 @@ public record VehicleUpdateRequest(
         // 매입정보
         Long purchasePrice,
         LocalDate purchaseDate,
+        LocalDate licenseDate,
 
         // 매출정보
         Long saleAmount,

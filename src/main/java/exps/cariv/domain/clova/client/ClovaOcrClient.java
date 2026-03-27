@@ -32,10 +32,10 @@ public class ClovaOcrClient implements OcrClient {
     private static final Object RATE_LIMIT_LOCK = new Object();
     private static long lastRequestEpochMs = 0L;
 
-    private static final int MAX_RETRY_ATTEMPTS = 5;
+    private static final int MAX_RETRY_ATTEMPTS = 3;
     private static final long MIN_REQUEST_INTERVAL_MS = 350L;
-    private static final long RETRY_BASE_BACKOFF_MS = 1200L;
-    private static final long RETRY_MAX_BACKOFF_MS = 8000L;
+    private static final long RETRY_BASE_BACKOFF_MS = 800L;
+    private static final long RETRY_MAX_BACKOFF_MS = 4000L;
 
     /**
      * 이미지 파일을 OCR 처리하여 OcrWord 리스트 반환

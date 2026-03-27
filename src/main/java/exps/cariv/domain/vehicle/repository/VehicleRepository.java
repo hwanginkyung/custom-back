@@ -22,6 +22,10 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long>, JpaSpec
 
     Optional<Vehicle> findByCompanyIdAndVehicleNoAndDeletedFalse(Long companyId, String vehicleNo);
 
+    List<Vehicle> findAllByCompanyIdAndVinAndDeletedFalseOrderByIdDesc(Long companyId, String vin);
+
+    List<Vehicle> findAllByCompanyIdAndVehicleNoAndDeletedFalseOrderByIdDesc(Long companyId, String vehicleNo);
+
     List<Vehicle> findAllByCompanyIdAndDeletedFalse(Long companyId);
 
     @Query("SELECT v FROM Vehicle v WHERE v.id = :id AND v.companyId = :companyId AND v.deleted = false")

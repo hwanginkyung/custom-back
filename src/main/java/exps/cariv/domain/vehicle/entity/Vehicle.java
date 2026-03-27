@@ -71,6 +71,7 @@ public class Vehicle extends TenantEntity {
     private Long shipperId;                      // 매입처(화주) FK
     private Long purchasePrice;                  // 매입가
     private LocalDate purchaseDate;              // 매입일
+    private LocalDate licenseDate;               // 면허일
 
     // ─── 매출정보 ───
     private Long saleAmount;                     // 판매금액
@@ -84,6 +85,11 @@ public class Vehicle extends TenantEntity {
 
     @Column(name = "export_invoice_no", length = 80)
     private String exportInvoiceNo;              // 인보이스 번호 (말소/신고 공통 고정값)
+
+    // ─── 환급 신청 ───
+    @Column(name = "refund_applied", columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean refundApplied = false;       // 환급 엑셀 다운로드 시 true
 
     // ─── 말소 출력 이력 ───
     private Instant malsoPrintedAt;              // 전체출력 최초 실행 시각 (null이면 미출력)
@@ -158,8 +164,22 @@ public class Vehicle extends TenantEntity {
         this.purchasePrice = purchasePrice;
     }
 
+    public void updateLicenseDate(LocalDate licenseDate) {
+        this.licenseDate = licenseDate;
+    }
+
     public void updateExportInvoiceNo(String exportInvoiceNo) {
         this.exportInvoiceNo = exportInvoiceNo;
+    }
+
+    /** null-safe 환급 신청 여부 조회 */
+    public boolean isRefundApplied() {
+        return Boolean.TRUE.equals(this.refundApplied);
+    }
+
+    /** 환급 신청 완료 처리 (엑셀 다운로드 시점) */
+    public void markRefundApplied() {
+        this.refundApplied = true;
     }
 
     /** 말소등록일 설정 (OCR 결과 반영용) */

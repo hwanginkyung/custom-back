@@ -10,10 +10,12 @@ import exps.cariv.domain.ocr.repository.OcrParseJobRepository;
 import exps.cariv.domain.ocr.service.OcrQueueService;
 import exps.cariv.domain.shipper.dto.response.ShipperDocumentUploadResponse;
 import exps.cariv.domain.shipper.entity.BizRegDocument;
+import exps.cariv.domain.shipper.entity.IdCardDocument;
 import exps.cariv.domain.shipper.entity.Shipper;
 import exps.cariv.domain.shipper.entity.ShipperDocument;
 import exps.cariv.domain.shipper.entity.ShipperType;
 import exps.cariv.domain.shipper.repository.BizRegDocumentRepository;
+import exps.cariv.domain.shipper.repository.IdCardDocumentRepository;
 import exps.cariv.domain.shipper.repository.ShipperRepository;
 import exps.cariv.global.aws.S3Upload;
 import exps.cariv.global.aws.S3Upload.UploadResult;
@@ -37,6 +39,7 @@ public class ShipperCommandService {
     private final ShipperRepository shipperRepo;
     private final DocumentRepository documentRepo;
     private final BizRegDocumentRepository bizRegDocRepo;
+    private final IdCardDocumentRepository idCardDocRepo;
     private final OcrParseJobRepository jobRepo;
     private final OcrQueueService ocrQueueService;
     private final S3Upload s3Upload;
@@ -82,9 +85,18 @@ public class ShipperCommandService {
         // 같은 타입 기존 문서를 하드 삭제 후 교체한다.
         hardDeleteExistingDocuments(companyId, shipperId, docType);
 
+        // 합본 업로드 시 기존 BIZ_REGISTRATION + ID_CARD 삭제 / 역도 마찬가지
+        if (docType == DocumentType.BIZ_ID_COMBINED) {
+            hardDeleteExistingDocuments(companyId, shipperId, DocumentType.BIZ_REGISTRATION);
+            hardDeleteExistingDocuments(companyId, shipperId, DocumentType.ID_CARD);
+        } else if (docType == DocumentType.BIZ_REGISTRATION || docType == DocumentType.ID_CARD) {
+            hardDeleteExistingDocuments(companyId, shipperId, DocumentType.BIZ_ID_COMBINED);
+        }
+
         return switch (docType) {
             case BIZ_REGISTRATION -> uploadBizRegWithOcr(companyId, userId, shipperId, up);
-            case ID_CARD -> uploadSimple(companyId, userId, shipperId, DocumentType.ID_CARD, up);
+            case ID_CARD -> uploadIdCardWithOcr(companyId, userId, shipperId, up);
+            case BIZ_ID_COMBINED -> uploadBizIdCombinedWithOcr(companyId, userId, shipperId, up);
             default -> uploadSimple(companyId, userId, shipperId, docType, up);
         };
     }
@@ -98,6 +110,7 @@ public class ShipperCommandService {
         getShipperOrThrow(companyId, shipperId);
         DocumentType docType = resolveDocType(typeStr);
         hardDeleteExistingDocuments(companyId, shipperId, docType);
+        // 합본 삭제 시 관련 개별 문서도 삭제할 필요 없음 (이미 업로드 시 삭제됨)
     }
 
     @Transactional
@@ -120,6 +133,40 @@ public class ShipperCommandService {
                 DocumentType.BIZ_REGISTRATION, doc.getS3Key());
 
         return new ShipperDocumentUploadResponse(doc.getId(), up.s3Key(), toApiType(DocumentType.BIZ_REGISTRATION));
+    }
+
+    /**
+     * 화주 신분증 업로드 → IdCardDocument로 저장 + OCR 대기열.
+     */
+    private ShipperDocumentUploadResponse uploadIdCardWithOcr(Long companyId, Long userId,
+                                                               Long shipperId, UploadResult up) {
+        IdCardDocument doc = IdCardDocument.createNew(
+                companyId, userId, shipperId, up.s3Key(),
+                up.originalFilename(), up.contentType(), up.sizeBytes());
+        doc = idCardDocRepo.saveAndFlush(doc);
+
+        OcrParseJob job = createOcrJob(companyId, userId, shipperId, doc.getId(),
+                DocumentType.ID_CARD, doc.getS3Key());
+
+        return new ShipperDocumentUploadResponse(doc.getId(), up.s3Key(), toApiType(DocumentType.ID_CARD));
+    }
+
+    /**
+     * 합본(사업자등록증+신분증) 업로드 → BizRegDocument로 저장 + BIZ_REGISTRATION 규칙으로 OCR.
+     * 말소신청서 생성 시 합성 없이 이 원본을 그대로 사용한다.
+     */
+    private ShipperDocumentUploadResponse uploadBizIdCombinedWithOcr(Long companyId, Long userId,
+                                                                      Long shipperId, UploadResult up) {
+        BizRegDocument doc = BizRegDocument.createCombined(
+                companyId, userId, shipperId, up.s3Key(),
+                up.originalFilename(), up.contentType(), up.sizeBytes());
+        doc = bizRegDocRepo.saveAndFlush(doc);
+
+        // OCR는 BIZ_REGISTRATION 규칙으로 실행 (사업자등록증 필드 추출)
+        OcrParseJob job = createOcrJob(companyId, userId, shipperId, doc.getId(),
+                DocumentType.BIZ_REGISTRATION, doc.getS3Key());
+
+        return new ShipperDocumentUploadResponse(doc.getId(), up.s3Key(), toApiType(DocumentType.BIZ_ID_COMBINED));
     }
 
     /**
@@ -209,10 +256,11 @@ public class ShipperCommandService {
     }
 
     private void validateDocTypeForShipperType(Shipper shipper, DocumentType docType) {
-        if (shipper.getShipperType() == ShipperType.CORPORATE_BUSINESS && docType == DocumentType.ID_CARD) {
+        if (shipper.getShipperType() == ShipperType.CORPORATE_BUSINESS
+                && (docType == DocumentType.ID_CARD || docType == DocumentType.BIZ_ID_COMBINED)) {
             throw new CustomException(
                     ErrorCode.INVALID_INPUT,
-                    "법인사업자 화주는 신분증(ID_CARD)을 업로드할 수 없습니다."
+                    "법인사업자 화주는 신분증(ID_CARD) 또는 합본(BIZ_ID_COMBINED)을 업로드할 수 없습니다."
             );
         }
     }
@@ -232,10 +280,11 @@ public class ShipperCommandService {
         return switch (typeStr.toUpperCase().trim()) {
             case "CEO_ID", "ID_CARD" -> DocumentType.ID_CARD;
             case "BIZ_REG", "BIZ_REGISTRATION" -> DocumentType.BIZ_REGISTRATION;
+            case "BIZ_ID_COMBINED" -> DocumentType.BIZ_ID_COMBINED;
             case "SIGN" -> DocumentType.SIGN;
             default -> throw new CustomException(ErrorCode.INVALID_INPUT,
                     "지원하지 않는 문서 타입입니다: " + typeStr
-                            + " (허용: CEO_ID, ID_CARD, BIZ_REG, BIZ_REGISTRATION, SIGN)");
+                            + " (허용: CEO_ID, ID_CARD, BIZ_REG, BIZ_REGISTRATION, BIZ_ID_COMBINED, SIGN)");
         };
     }
 
@@ -246,6 +295,7 @@ public class ShipperCommandService {
         return switch (type) {
             case ID_CARD -> "CEO_ID";
             case BIZ_REGISTRATION -> "BIZ_REG";
+            case BIZ_ID_COMBINED -> "BIZ_ID_COMBINED";
             default -> type.name();
         };
     }

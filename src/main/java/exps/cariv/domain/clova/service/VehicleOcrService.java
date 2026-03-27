@@ -53,28 +53,28 @@ public class VehicleOcrService {
     public VehicleRegistration processBytes(byte[] imageBytes, String fileName) throws IOException {
         log.info("Processing vehicle registration from upload: {}", fileName);
 
-        byte[] preprocessed = imagePreprocessor.preprocess(imageBytes, fileName);
-
         List<AttemptResult> attempts = new ArrayList<>();
-        AttemptResult base = runAttempt(preprocessed, fileName, 0);
+        AttemptResult base = runAttempt(imageBytes, fileName, 0, false);
         attempts.add(base);
 
-        if (shouldTryRotation(base)) {
-            attempts.add(runAttempt(imagePreprocessor.rotate(preprocessed, 90), fileName, 90));
-            attempts.add(runAttempt(imagePreprocessor.rotate(preprocessed, 270), fileName, 270));
+        if (shouldTryPreprocessFallback(base)) {
+            byte[] preprocessed = imagePreprocessor.preprocess(imageBytes, fileName);
+            AttemptResult preprocessedBase = runAttempt(preprocessed, fileName, 0, true);
+            attempts.add(preprocessedBase);
+
+            if (shouldTryRotation(preprocessedBase)) {
+                attempts.add(runAttempt(imagePreprocessor.rotate(preprocessed, 90), fileName, 90, true));
+                attempts.add(runAttempt(imagePreprocessor.rotate(preprocessed, 270), fileName, 270, true));
+            }
         }
 
         AttemptResult best = pickBest(attempts);
 
-        // 마지막까지 실패면 180도까지 추가 확인
-        if (Boolean.TRUE.equals(best.result.getNeedsRetry())) {
-            attempts.add(runAttempt(imagePreprocessor.rotate(preprocessed, 180), fileName, 180));
-            best = pickBest(attempts);
-        }
-
         VehicleRegistration finalResult = best.result;
 
-        if (best.rotation != 0) {
+        if (best.preprocessedInput && best.rotation == 0) {
+            appendQualityReason(finalResult, "전처리 OCR 적용");
+        } else if (best.rotation != 0) {
             appendQualityReason(finalResult, "전처리 회전보정 적용(" + best.rotation + "도)");
         }
         if (registrationLlmRefiner != null) {
@@ -87,9 +87,10 @@ public class VehicleOcrService {
         }
 
         log.info(
-                "OCR provider={} attempts={} selectedRotation={} selectedScore={} needsRetry={}",
+                "OCR provider={} attempts={} selectedPreprocessed={} selectedRotation={} selectedScore={} needsRetry={}",
                 ocrClient.provider(),
                 attempts.size(),
+                best.preprocessedInput,
                 best.rotation,
                 round4(best.rank),
                 finalResult.getNeedsRetry()
@@ -97,26 +98,48 @@ public class VehicleOcrService {
         return finalResult;
     }
 
-    private AttemptResult runAttempt(byte[] bytes, String fileName, int rotation) throws IOException {
+    private AttemptResult runAttempt(byte[] bytes, String fileName, int rotation, boolean preprocessedInput) throws IOException {
         String attemptName = buildAttemptFileName(fileName, rotation);
         List<OcrWord> words = ocrClient.recognize(bytes, attemptName);
-        log.info("OCR returned {} words (rotation={}°)", words.size(), rotation);
+        log.info("OCR returned {} words (preprocessed={}, rotation={}°)", words.size(), preprocessedInput, rotation);
 
         VehicleRegistration result = parseWithPipeline(words);
         boolean orientationSuspicious = isOrientationSuspicious(words);
         double rank = scoreAttempt(result, orientationSuspicious, rotation);
-        return new AttemptResult(rotation, words, result, orientationSuspicious, rank);
+        return new AttemptResult(rotation, preprocessedInput, words, result, orientationSuspicious, rank);
+    }
+
+    private boolean shouldTryPreprocessFallback(AttemptResult base) {
+        if (base == null || base.result == null) return true;
+        VehicleRegistration r = base.result;
+
+        if (Boolean.TRUE.equals(r.getNeedsRetry())) return true;
+        if (Boolean.FALSE.equals(r.getQualityGatePassed())) return true;
+        if (base.orientationSuspicious) return true;
+
+        if (isBlank(r.getVin()) || isBlank(r.getVehicleNo())) return true;
+        if (isBlank(r.getFirstRegistratedAt()) || isBlank(r.getManufactureYearMonth())) return true;
+
+        return fieldConfidence(r, "vin") < 0.90 || fieldConfidence(r, "vehicleNo") < 0.85;
     }
 
     private boolean shouldTryRotation(AttemptResult base) {
         if (base.orientationSuspicious) return true;
-        if (Boolean.TRUE.equals(base.result.getNeedsRetry())) return true;
 
-        // 핵심 필드 비어 있으면 회전 재시도
-        return isBlank(base.result.getVin())
-                || isBlank(base.result.getVehicleNo())
-                || isBlank(base.result.getFirstRegistratedAt())
-                || isBlank(base.result.getManufactureYearMonth());
+        // 빈 필드가 5개 이상일 때만 회전 재시도
+        int blankCount = 0;
+        VehicleRegistration r = base.result;
+        if (isBlank(r.getVin())) blankCount++;
+        if (isBlank(r.getVehicleNo())) blankCount++;
+        if (isBlank(r.getFirstRegistratedAt())) blankCount++;
+        if (isBlank(r.getManufactureYearMonth())) blankCount++;
+        if (isBlank(r.getOwnerName())) blankCount++;
+        if (isBlank(r.getOwnerId())) blankCount++;
+        if (isBlank(r.getEngineType())) blankCount++;
+        if (isBlank(r.getModelName())) blankCount++;
+        if (isBlank(r.getWeight())) blankCount++;
+        if (isBlank(r.getMaxLoad())) blankCount++;
+        return blankCount >= 5;
     }
 
     private AttemptResult pickBest(List<AttemptResult> attempts) {
@@ -277,6 +300,7 @@ public class VehicleOcrService {
 
     private static class AttemptResult {
         private final int rotation;
+        private final boolean preprocessedInput;
         private final List<OcrWord> words;
         private final VehicleRegistration result;
         private final boolean orientationSuspicious;
@@ -284,12 +308,14 @@ public class VehicleOcrService {
 
         private AttemptResult(
                 int rotation,
+                boolean preprocessedInput,
                 List<OcrWord> words,
                 VehicleRegistration result,
                 boolean orientationSuspicious,
                 double rank
         ) {
             this.rotation = rotation;
+            this.preprocessedInput = preprocessedInput;
             this.words = words;
             this.result = result;
             this.orientationSuspicious = orientationSuspicious;

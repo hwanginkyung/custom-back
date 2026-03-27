@@ -14,6 +14,7 @@ import org.apache.poi.ss.usermodel.Drawing;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.xssf.usermodel.XSSFClientAnchor;
 import org.apache.poi.xssf.usermodel.XSSFDrawing;
@@ -358,6 +359,7 @@ public class CustomsInvoiceXlsxGenerator {
             populateHeader(sheet, vehicles, crvs, ci, shipperInfo, shippingMethod, warehouseLocation);
             clearTemplateRows(sheet);
             fillVehicleRows(sheet, vehicles, crvs, cbmByVehicleId, weightByVehicleId);
+            mergeEmptyDescriptionRows(sheet, vehicles.size());
             fillFreightAndInsurance(sheet, crvs);
             applySignatureImage(sheet, wb, shipperSignaturePng);
 
@@ -558,6 +560,33 @@ public class CustomsInvoiceXlsxGenerator {
             return;
         }
         setNumericAt(sheet, TOTAL_ROW, colIdx, value.doubleValue());
+    }
+
+    /**
+     * 빈 데이터 행의 Description 서브컬럼(D~N)을 하나로 병합한다.
+     * 데이터가 있는 행은 Model/Year/VIN/FuelType/EngineCC 각각 표시하고,
+     * 비어 있는 행은 셀 구분선 없이 하나로 합친다.
+     */
+    private void mergeEmptyDescriptionRows(Sheet sheet, int filledCount) {
+        int firstEmptyRow = TABLE_START_ROW + filledCount;
+        int lastEmptyRow = TABLE_TEMPLATE_LAST_ROW;
+        if (firstEmptyRow > lastEmptyRow) return;
+
+        // 기존 머지 영역 중 빈 행의 Description 영역(D~N)과 겹치는 것 모두 제거
+        for (int i = sheet.getNumMergedRegions() - 1; i >= 0; i--) {
+            CellRangeAddress region = sheet.getMergedRegion(i);
+            if (region.getFirstRow() >= firstEmptyRow
+                    && region.getLastRow() <= lastEmptyRow
+                    && region.getLastColumn() >= COL_DESCRIPTION
+                    && region.getFirstColumn() <= COL_CC) {
+                sheet.removeMergedRegion(i);
+            }
+        }
+
+        // 빈 행마다 D~N(COL_DESCRIPTION ~ COL_CC) 병합
+        for (int rowIdx = firstEmptyRow; rowIdx <= lastEmptyRow; rowIdx++) {
+            sheet.addMergedRegion(new CellRangeAddress(rowIdx, rowIdx, COL_DESCRIPTION, COL_CC));
+        }
     }
 
     private void applySignatureImage(Sheet sheet, Workbook wb, byte[] signaturePng) {

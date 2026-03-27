@@ -17,11 +17,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CustomsBrokerService {
 
+    private static final String ONLY_BROKER_NAME = "진솔관세법인";
+
     private final CustomsBrokerRepository brokerRepo;
 
     @Transactional(readOnly = true)
     public List<CustomsBrokerResponse> list(Long companyId) {
         return brokerRepo.findAllByCompanyIdAndActiveTrueOrderByNameAsc(companyId).stream()
+                .filter(b -> ONLY_BROKER_NAME.equals(b.getName()))
                 .map(b -> new CustomsBrokerResponse(
                         b.getId(),
                         b.getName(),
@@ -34,12 +37,23 @@ public class CustomsBrokerService {
     @Transactional
     public Long create(Long companyId, CustomsBrokerCreateRequest req) {
         String name = req.name().trim();
+        validateOnlyJinsol(name);
+
+        CustomsBroker existing = brokerRepo.findByCompanyIdAndNameIgnoreCaseAndActiveTrue(companyId, ONLY_BROKER_NAME)
+                .orElse(null);
+        if (existing != null) {
+            existing.update(ONLY_BROKER_NAME, trimToNull(req.phone()), trimToNull(req.email()));
+            existing.activate();
+            brokerRepo.save(existing);
+            return existing.getId();
+        }
+
         if (brokerRepo.existsByCompanyIdAndNameIgnoreCaseAndActiveTrue(companyId, name)) {
             throw new CustomException(ErrorCode.INVALID_INPUT, "동일한 관세사명이 이미 존재합니다.");
         }
 
         CustomsBroker broker = CustomsBroker.builder()
-                .name(name)
+                .name(ONLY_BROKER_NAME)
                 .phone(trimToNull(req.phone()))
                 .email(trimToNull(req.email()))
                 .active(true)
@@ -55,19 +69,29 @@ public class CustomsBrokerService {
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "관세사를 찾을 수 없습니다."));
 
         String name = req.name().trim();
+        validateOnlyJinsol(name);
 
         if (brokerRepo.existsByCompanyIdAndNameIgnoreCaseAndActiveTrueAndIdNot(companyId, name, brokerId)) {
             throw new CustomException(ErrorCode.INVALID_INPUT, "동일한 관세사명이 이미 존재합니다.");
         }
 
-        broker.update(name, trimToNull(req.phone()), trimToNull(req.email()));
+        broker.update(ONLY_BROKER_NAME, trimToNull(req.phone()), trimToNull(req.email()));
     }
 
     @Transactional
     public void delete(Long companyId, Long brokerId) {
         CustomsBroker broker = brokerRepo.findByIdAndCompanyIdAndActiveTrue(brokerId, companyId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "관세사를 찾을 수 없습니다."));
+        if (ONLY_BROKER_NAME.equals(broker.getName())) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "진솔관세법인은 삭제할 수 없습니다.");
+        }
         broker.deactivate();
+    }
+
+    private void validateOnlyJinsol(String name) {
+        if (!ONLY_BROKER_NAME.equals(name)) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "현재는 진솔관세법인만 등록할 수 있습니다.");
+        }
     }
 
     private String trimToNull(String raw) {

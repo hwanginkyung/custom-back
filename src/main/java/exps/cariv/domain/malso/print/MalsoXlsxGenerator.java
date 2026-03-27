@@ -25,10 +25,12 @@ public class MalsoXlsxGenerator {
     private static final String TEMPLATE = "templates/말소신청서_A4_수정본_v3.xlsx";
     private static final DateTimeFormatter APP_DATE_FORMAT =
             DateTimeFormatter.ofPattern("yyyy  년  MM  월  dd  일");
-    // 출력 시작점은 좌상단(A1)로 고정하고, 끝점은 실제 시트 사용영역으로 동적으로 계산한다.
-    // 템플릿 범위를 임의로 축소하면(예: Q47) 우측/하단 구분선과 본문이 잘릴 수 있다.
+    // 출력 시작점은 좌상단(A1)로 고정한다.
+    // 인쇄영역은 템플릿 정의값을 우선 사용하고, 없으면 기본값(A1:K37)을 적용한다.
     private static final int PRINT_COL_FROM = 0;   // A
+    private static final int DEFAULT_PRINT_COL_TO = 10; // K
     private static final int PRINT_ROW_FROM = 0;   // 1
+    private static final int DEFAULT_PRINT_ROW_TO = 36; // 37
 
     public byte[] generate(MalsoXlsxData data) {
         try (InputStream is = new ClassPathResource(TEMPLATE).getInputStream();
@@ -106,22 +108,17 @@ public class MalsoXlsxGenerator {
         sheet.setFitToPage(true);
         sheet.setAutobreaks(true);
         sheet.setHorizontallyCenter(true);
-        int printRowTo = sheet.getLastRowNum();
-        int printColTo = findLastUsedCol(sheet);
-        wb.setPrintArea(wb.getSheetIndex(sheet), PRINT_COL_FROM, printColTo, PRINT_ROW_FROM, printRowTo);
-    }
-
-    private static int findLastUsedCol(Sheet sheet) {
-        int maxCol = 0;
-        for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
-            Row row = sheet.getRow(r);
-            if (row == null) continue;
-            short lastCell = row.getLastCellNum();
-            if (lastCell > 0) {
-                maxCol = Math.max(maxCol, lastCell - 1);
-            }
+        int sheetIndex = wb.getSheetIndex(sheet);
+        String existingPrintArea = wb.getPrintArea(sheetIndex);
+        if (existingPrintArea == null || existingPrintArea.isBlank()) {
+            wb.setPrintArea(
+                    sheetIndex,
+                    PRINT_COL_FROM,
+                    DEFAULT_PRINT_COL_TO,
+                    PRINT_ROW_FROM,
+                    DEFAULT_PRINT_ROW_TO
+            );
         }
-        return maxCol;
     }
 
 }

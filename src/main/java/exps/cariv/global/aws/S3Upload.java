@@ -194,6 +194,19 @@ public class S3Upload {
     public record UploadResult(String s3Key, String originalFilename, String contentType, long sizeBytes) {}
 
     /**
+     * S3 key에 바이트 배열 직접 업로드 (기존 키 덮어쓰기 가능).
+     */
+    public void uploadBytes(String key, byte[] data, String contentType) {
+        PutObjectRequest req = PutObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .contentType(contentType != null ? contentType : "application/octet-stream")
+                .contentLength((long) data.length)
+                .build();
+        s3Client.putObject(req, RequestBody.fromBytes(data));
+    }
+
+    /**
      * S3 key 기준 파일 삭제.
      * 존재하지 않는 key 삭제는 S3 특성상 성공으로 처리된다(idempotent).
      */

@@ -22,6 +22,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 /**
  * 수출신고필증 OCR 처리 서비스.
  * <p>OcrJobWorker 에서 documentType == EXPORT_CERTIFICATE 일 때 호출.</p>
@@ -108,9 +110,16 @@ public class ExportOcrService {
             throw new IllegalStateException("OCR 차량 매칭 실패: 차대번호(chassisNo)가 비어 있습니다.");
         }
 
-        return vehicleRepo.findByCompanyIdAndVinAndDeletedFalse(companyId, vin)
-                .map(Vehicle::getId)
-                .orElseThrow(() -> new IllegalStateException("OCR 차량 매칭 실패: vin=" + vin));
+        List<Vehicle> matched = vehicleRepo.findAllByCompanyIdAndVinAndDeletedFalseOrderByIdDesc(companyId, vin);
+        if (matched.size() > 1) {
+            throw new IllegalStateException(
+                    "중복된 차량이 존재합니다: vin=" + vin + " (count=" + matched.size() + ")"
+            );
+        }
+        if (matched.isEmpty()) {
+            throw new IllegalStateException("OCR 차량 매칭 실패: vin=" + vin);
+        }
+        return matched.get(0).getId();
     }
 
     private String normalizeVin(String vin) {

@@ -69,6 +69,9 @@ dependencies {
 	implementation 'mysql:mysql-connector-java:8.0.33'
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+	// EXIF 메타데이터 (이미지 회전 보정)
+	implementation 'com.drewnoakes:metadata-extractor:2.19.0'
 }
 
 tasks.named('test') {

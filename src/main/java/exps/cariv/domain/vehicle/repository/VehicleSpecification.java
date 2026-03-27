@@ -69,6 +69,34 @@ public final class VehicleSpecification {
         return (root, query, cb) -> cb.lessThan(root.get("createdAt"), end);
     }
 
+    /** 매입일 기준 시작일 이후 */
+    public static Specification<Vehicle> purchaseDateAfter(LocalDate startDate) {
+        if (startDate == null) return null;
+        return (root, query, cb) -> cb.greaterThanOrEqualTo(root.get("purchaseDate"), startDate);
+    }
+
+    /** 매입일 기준 종료일 이전 */
+    public static Specification<Vehicle> purchaseDateBefore(LocalDate endDate) {
+        if (endDate == null) return null;
+        return (root, query, cb) -> cb.lessThanOrEqualTo(root.get("purchaseDate"), endDate);
+    }
+
+    /** 소유자유형이 개인계(INDIVIDUAL, DEALER_INDIVIDUAL) */
+    public static Specification<Vehicle> ownerTypeIndividual() {
+        return (root, query, cb) -> root.get("ownerType").in(
+                exps.cariv.domain.vehicle.entity.OwnerType.INDIVIDUAL,
+                exps.cariv.domain.vehicle.entity.OwnerType.DEALER_INDIVIDUAL
+        );
+    }
+
+    /** 소유자유형이 법인계(DEALER_CORPORATE, CORPORATE_OTHER) */
+    public static Specification<Vehicle> ownerTypeCorporate() {
+        return (root, query, cb) -> root.get("ownerType").in(
+                exps.cariv.domain.vehicle.entity.OwnerType.DEALER_CORPORATE,
+                exps.cariv.domain.vehicle.entity.OwnerType.CORPORATE_OTHER
+        );
+    }
+
     /** 말소 전체출력 이력 여부 필터 */
     public static Specification<Vehicle> malsoPrinted(boolean printed) {
         return (root, query, cb) -> printed

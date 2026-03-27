@@ -2,6 +2,7 @@ package exps.cariv.domain.contract.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import exps.cariv.domain.contract.dto.ContractParseResult;
+import exps.cariv.domain.contract.dto.ContractParsed;
 import exps.cariv.domain.contract.entity.ContractDocument;
 import exps.cariv.domain.contract.repository.ContractDocumentRepository;
 import exps.cariv.domain.document.entity.DocumentType;
@@ -36,6 +37,7 @@ public class ContractOcrService {
     private final ObjectMapper mapper;
     private final S3ObjectReader s3Reader;
     private final ContractParserService parser;
+    private final ContractLlmRefiner contractLlmRefiner;
     private final ContractDocumentRepository contractDocRepo;
     private final OcrParseJobRepository jobRepo;
     private final NotificationCommandService notificationCommandService;
@@ -67,7 +69,10 @@ public class ContractOcrService {
             throw new IllegalStateException("매매계약서가 아닙니다. detected=" + detected);
         }
 
-        ContractParseResult parsed = parser.parseAndValidate(res);
+        ContractParseResult rawParsed = parser.parseAndValidate(res);
+        // LLM 보정 적용
+        ContractParsed refined = contractLlmRefiner.refineIfNeeded(rawParsed.parsed(), res);
+        ContractParseResult parsed = new ContractParseResult(refined, rawParsed.missingFields(), rawParsed.errorFields());
         String resultJson;
         try {
             resultJson = mapper.writeValueAsString(parsed);

@@ -84,7 +84,9 @@ public class VehicleQueryService {
                 .and(VehicleSpecification.keywordLike(req.keyword()))
                 .and(VehicleSpecification.shipperNameIs(req.shipperName()))
                 .and(VehicleSpecification.createdAfter(req.startDate()))
-                .and(VehicleSpecification.createdBefore(req.endDate()));
+                .and(VehicleSpecification.createdBefore(req.endDate()))
+                .and(VehicleSpecification.purchaseDateAfter(req.purchaseFrom()))
+                .and(VehicleSpecification.purchaseDateBefore(req.purchaseTo()));
 
         PageRequest pageable = PageRequest.of(req.page(), req.size(), Sort.by(Sort.Direction.DESC, "createdAt"));
 
@@ -162,8 +164,7 @@ public class VehicleQueryService {
                         SECTION_REGISTRATION,
                         "차량 등록",
                         List.of(
-                                toDocumentSlot(vehicleId, SLOT_REGISTRATION, "자동차등록증", latestDocs.get(DocumentType.REGISTRATION)),
-                                toDocumentSlot(vehicleId, SLOT_OWNER_ID_CARD, "소유자 신분증", latestDocs.get(DocumentType.ID_CARD))
+                                toDocumentSlot(vehicleId, SLOT_REGISTRATION, "자동차등록증", latestDocs.get(DocumentType.REGISTRATION))
                         )
                 ),
                 new AttachmentSection(
@@ -189,6 +190,13 @@ public class VehicleQueryService {
                                 toDocumentSlot(vehicleId, SLOT_EXPORT_CERT, "신고필증", latestDocs.get(DocumentType.EXPORT_CERTIFICATE)),
                                 toGeneratedSlot(vehicleId, SLOT_CUSTOMS_INVOICE, "invoice/packinglist(필증용)", customsInvoice),
                                 customsAttachment
+                        )
+                ),
+                new AttachmentSection(
+                        "ETC",
+                        "기타 (선택사항)",
+                        List.of(
+                                toDocumentSlot(vehicleId, SLOT_OWNER_ID_CARD, "차주 신분증", latestDocs.get(DocumentType.ID_CARD))
                         )
                 )
         );
@@ -499,7 +507,13 @@ public class VehicleQueryService {
                 v.getModelYear(),
                 v.getCarType(),
                 v.getShipperName(),
-                v.getOwnerType() == null ? null : v.getOwnerType().name()
+                v.getOwnerType() == null ? null : v.getOwnerType().name(),
+                v.getOwnerName(),
+                v.getPurchaseDate(),
+                v.getPurchasePrice(),
+                v.isRefundApplied(),
+                null,  // purchaseCompanyName - 추후 구현
+                v.getLicenseDate()
         );
     }
 

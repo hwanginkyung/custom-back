@@ -56,4 +56,8 @@ public class CustomsBroker extends TenantEntity {
     public void deactivate() {
         this.active = false;
     }
+
+    public void activate() {
+        this.active = true;
+    }
 }

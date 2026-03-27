@@ -25,12 +25,14 @@ import static exps.cariv.global.parser.ParserUtils.putIfAbsent;
 @Slf4j
 public class IdCardParserService {
 
-    private static final List<String> NAME_LABELS = List.of("성명", "이름");
-    private static final List<String> ID_LABELS = List.of("주민등록번호", "주민번호");
-    private static final List<String> ADDRESS_LABELS = List.of("주소");
-    private static final List<String> ISSUE_DATE_LABELS = List.of("발급일", "발행일");
+    private static final List<String> NAME_LABELS = List.of("성명", "이름", "성 명");
+    private static final List<String> ID_LABELS = List.of("주민등록번호", "주민번호", "주민등록 번호");
+    private static final List<String> ADDRESS_LABELS = List.of("주소", "주 소");
+    private static final List<String> ISSUE_DATE_LABELS = List.of("발급일", "발행일", "교부일");
+    private static final List<String> LICENSE_NO_LABELS = List.of("면허번호", "운전면허번호", "면허 번호");
     private static final List<String> NAME_NOISE = List.of(
-            "주민등록", "운전면허", "대한민국", "republic", "korea", "신분증", "발급일", "주소", "번호"
+            "주민등록", "운전면허", "대한민국", "republic", "korea", "신분증", "발급일", "주소", "번호",
+            "면허증", "경찰청", "driver", "license"
     );
 
     private static final Pattern KOR_ID_PATTERN = Pattern.compile("(?<!\\d)(\\d{6})[- ]?(\\d{7})(?!\\d)");
@@ -108,14 +110,13 @@ public class IdCardParserService {
     }
 
     /**
-     * 주민번호 뒷자리 마스킹 (000000-1234567 → 000000-1******)
+     * 주민번호 정규화 (마스킹 없이 원본 유지, 하이픈만 정리)
      */
     private String maskId(String raw) {
         if (raw == null) return null;
         String digits = raw.replaceAll("\\D", "");
         if (digits.length() >= 13) {
-            String normalized = digits.substring(0, 6) + "-" + digits.charAt(6);
-            return normalized + "******";
+            return digits.substring(0, 6) + "-" + digits.substring(6, 13);
         }
         String compact = raw.replaceAll("\\s+", "");
         return compact.isBlank() ? null : compact;

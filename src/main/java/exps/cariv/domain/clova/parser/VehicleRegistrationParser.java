@@ -1388,17 +1388,15 @@ public class VehicleRegistrationParser {
                 || findAnchorWord("형식및연식모델년도") != null
                 || findAnchorWord("형식및모델연도") != null;
 
-        // 규칙 기반 보정: 연월이 있으면 modelYear를 보강
-        if ((reg.getModelYear() == null || !isValidModelYear(reg.getModelYear()))
+        // 1순위: VIN 10번째 자리에서 연식 추출 (가장 신뢰도 높음)
+        Integer vinYear = inferModelYearFromVin(reg.getVin());
+        if (isValidModelYear(vinYear)) {
+            reg.setModelYear(vinYear);
+        }
+        // 2순위: OCR 파싱 결과 (VIN에서 못 뽑았을 때만)
+        if (!isValidModelYear(reg.getModelYear())
                 && isValidManufactureYearMonth(reg.getManufactureYearMonth())) {
             reg.setModelYear(Integer.parseInt(reg.getManufactureYearMonth().substring(0, 4)));
-        }
-        Integer vinYear = inferModelYearFromVin(reg.getVin());
-        if (yearOnlyFormat && isValidModelYear(vinYear)) {
-            // 모델연도 서식 문서는 VIN 연도코드가 가장 안정적
-            reg.setModelYear(vinYear);
-        } else if (reg.getModelYear() == null || !isValidModelYear(reg.getModelYear())) {
-            if (isValidModelYear(vinYear)) reg.setModelYear(vinYear);
         }
 
         List<String> issues = new ArrayList<>();

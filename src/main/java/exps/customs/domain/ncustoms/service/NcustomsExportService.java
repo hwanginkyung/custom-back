@@ -559,7 +559,7 @@ public class NcustomsExportService {
     ) {
         String userCode = defaultIfBlank(requestUserCode, "4");
         String writerId = defaultIfBlank(actorLoginId, defaultIfBlank(requestWriterId, "SYSTEM"));
-        String writerName = defaultIfBlank(requestWriterName, writerId);
+        String writerName = defaultIfBlank(actorLoginId, defaultIfBlank(requestWriterName, writerId));
 
         if (actorUserId != null) {
             User user = userRepository.findById(actorUserId).orElse(null);

@@ -830,6 +830,13 @@ public class MalsoPrintService {
                 }
                 return new DocumentBytes(FILE_OWNER_BIZ_PREFIX + vin + ".pdf", "application/pdf", combinedBytes);
             }
+            // 합본 문서가 존재하지만 S3에서 읽기 실패 → 개별 문서가 없을 수 있으므로 여기서 처리
+            if (!hasIndividual) {
+                throw new CustomException(
+                        ErrorCode.REQUIRED_DOCUMENT_MISSING,
+                        "합본 문서(대표자 신분증+사업자등록증)의 파일을 읽을 수 없습니다. 문서를 다시 업로드해주세요."
+                );
+            }
         }
 
         // ── 기존 로직: 대표자 신분증(화주) + 사업자등록증 합성 ──
@@ -1763,7 +1770,11 @@ public class MalsoPrintService {
         Optional<Document> shipperIdCardDoc = Optional.empty();
         Optional<Document> shipperBizRegDoc = Optional.empty();
 
-        if (!hasCombined && vehicle.getShipperId() != null) {
+        if (hasCombined) {
+            // 합본 문서가 있으면 대표자신분증과 사업자등록증 모두 합본 문서로 대체
+            shipperIdCardDoc = combinedDoc;
+            shipperBizRegDoc = combinedDoc;
+        } else if (vehicle.getShipperId() != null) {
             shipperIdCardDoc = findLatestShipperDocument(companyId, vehicle.getShipperId(), DocumentType.ID_CARD);
             if (shipperIdCardDoc.isEmpty()) {
                 missingDocuments.add("Shipper representative ID card (대표자 신분증)");
@@ -1800,15 +1811,28 @@ public class MalsoPrintService {
         return value == null || value.isBlank();
     }
 
+    /**
+     * BIZ_REGISTRATION 우선, 없으면 BIZ_ID_COMBINED 합본 문서를 찾는다.
+     */
+    private Optional<Document> findShipperBizRegOrCombinedDoc(Long companyId, Long shipperId) {
+        Optional<Document> doc = documentRepo.findTopByCompanyIdAndRefTypeAndRefIdAndTypeOrderByUploadedAtDescIdDesc(
+                companyId, DocumentRefType.SHIPPER, shipperId, DocumentType.BIZ_REGISTRATION
+        );
+        if (doc.isEmpty()) {
+            doc = documentRepo.findTopByCompanyIdAndRefTypeAndRefIdAndTypeOrderByUploadedAtDescIdDesc(
+                    companyId, DocumentRefType.SHIPPER, shipperId, DocumentType.BIZ_ID_COMBINED
+            );
+        }
+        return doc;
+    }
+
     private String resolveShipperAddress(Long companyId, Long shipperId, Shipper shipper) {
         if (shipperId == null) {
             return shipper != null ? shipper.getAddress() : null;
         }
 
-        // 1) BizRegDocument 엔티티 필드
-        String fromEntity = documentRepo.findTopByCompanyIdAndRefTypeAndRefIdAndTypeOrderByUploadedAtDescIdDesc(
-                        companyId, DocumentRefType.SHIPPER, shipperId, DocumentType.BIZ_REGISTRATION
-                )
+        // 1) BizRegDocument 엔티티 필드 (BIZ_REGISTRATION 또는 BIZ_ID_COMBINED)
+        String fromEntity = findShipperBizRegOrCombinedDoc(companyId, shipperId)
                 .map(this::extractBizRegAddress)
                 .filter(value -> !isBlank(value))
                 .orElse(null);
@@ -1827,10 +1851,8 @@ public class MalsoPrintService {
             return shipper != null ? nvl(shipper.getName(), null) : null;
         }
 
-        // 1) BizRegDocument 엔티티 필드
-        String fromEntity = documentRepo.findTopByCompanyIdAndRefTypeAndRefIdAndTypeOrderByUploadedAtDescIdDesc(
-                        companyId, DocumentRefType.SHIPPER, shipperId, DocumentType.BIZ_REGISTRATION
-                )
+        // 1) BizRegDocument 엔티티 필드 (BIZ_REGISTRATION 또는 BIZ_ID_COMBINED)
+        String fromEntity = findShipperBizRegOrCombinedDoc(companyId, shipperId)
                 .map(this::extractBizRegCompanyName)
                 .filter(value -> !isBlank(value))
                 .orElse(null);
@@ -1849,10 +1871,8 @@ public class MalsoPrintService {
             return shipper != null ? nvl(shipper.getName(), null) : null;
         }
 
-        // 1) BizRegDocument 엔티티 필드
-        String fromEntity = documentRepo.findTopByCompanyIdAndRefTypeAndRefIdAndTypeOrderByUploadedAtDescIdDesc(
-                        companyId, DocumentRefType.SHIPPER, shipperId, DocumentType.BIZ_REGISTRATION
-                )
+        // 1) BizRegDocument 엔티티 필드 (BIZ_REGISTRATION 또는 BIZ_ID_COMBINED)
+        String fromEntity = findShipperBizRegOrCombinedDoc(companyId, shipperId)
                 .map(this::extractBizRegRepresentativeName)
                 .filter(value -> !isBlank(value))
                 .orElse(null);
@@ -1876,9 +1896,7 @@ public class MalsoPrintService {
         }
 
         // 1) BizRegDocument 엔티티 필드
-        String fromEntity = documentRepo.findTopByCompanyIdAndRefTypeAndRefIdAndTypeOrderByUploadedAtDescIdDesc(
-                        companyId, DocumentRefType.SHIPPER, shipperId, DocumentType.BIZ_REGISTRATION
-                )
+        String fromEntity = findShipperBizRegOrCombinedDoc(companyId, shipperId)
                 .map(this::extractBizRegNumber)
                 .map(this::normalizeBizNumber)
                 .orElse(null);
@@ -1894,10 +1912,15 @@ public class MalsoPrintService {
      * BizRegDocument 엔티티 필드가 비어있을 때 폴백으로 사용.
      */
     private String resolveBizRegFieldFromJob(Long companyId, Long shipperId, String fieldName) {
-        // BizReg document ID 찾기
+        // BizReg document ID 찾기 (BIZ_REGISTRATION 우선, 없으면 BIZ_ID_COMBINED 합본)
         Optional<Document> bizRegDoc = documentRepo.findTopByCompanyIdAndRefTypeAndRefIdAndTypeOrderByUploadedAtDescIdDesc(
                 companyId, DocumentRefType.SHIPPER, shipperId, DocumentType.BIZ_REGISTRATION
         );
+        if (bizRegDoc.isEmpty()) {
+            bizRegDoc = documentRepo.findTopByCompanyIdAndRefTypeAndRefIdAndTypeOrderByUploadedAtDescIdDesc(
+                    companyId, DocumentRefType.SHIPPER, shipperId, DocumentType.BIZ_ID_COMBINED
+            );
+        }
         if (bizRegDoc.isEmpty()) return null;
 
         return jobRepo.findTopByCompanyIdAndVehicleDocumentIdAndStatusOrderByCreatedAtDesc(

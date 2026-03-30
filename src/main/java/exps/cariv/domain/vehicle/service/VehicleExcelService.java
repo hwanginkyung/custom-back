@@ -1,10 +1,14 @@
 package exps.cariv.domain.vehicle.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import exps.cariv.domain.document.entity.Document;
 import exps.cariv.domain.document.entity.DocumentRefType;
 import exps.cariv.domain.document.entity.DocumentType;
 import exps.cariv.domain.document.repository.DocumentRepository;
-import exps.cariv.domain.shipper.entity.IdCardDocument;
+import exps.cariv.domain.ocr.entity.OcrJobStatus;
+import exps.cariv.domain.ocr.entity.OcrParseJob;
+import exps.cariv.domain.ocr.repository.OcrParseJobRepository;
 import exps.cariv.domain.vehicle.entity.Vehicle;
 import exps.cariv.domain.vehicle.entity.VehicleStage;
 import exps.cariv.domain.vehicle.repository.VehicleRepository;
@@ -44,13 +48,14 @@ public class VehicleExcelService {
 
     private final VehicleRepository vehicleRepo;
     private final DocumentRepository documentRepo;
+    private final OcrParseJobRepository ocrJobRepo;
+    private final ObjectMapper objectMapper;
 
     private static final String[] HEADERS = {
-            "No", "상태", "등록일", "차량번호", "차량명", "차대번호",
-            "연식", "차종", "용도", "소유자", "주행거리(km)",
-            "배기량(cc)", "연료", "변속기", "색상",
-            "최초등록일", "화주명", "매입가",
-            "매입일", "말소등록일"
+            "No", "등록일", "차량번호", "차량명", "차대번호",
+            "연식", "주행거리(km)", "배기량(cc)", "색상",
+            "최초등록일", "매입가", "매입일", "말소등록일", "면허일",
+            "소유자", "소유자유형", "화주명"
     };
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
@@ -116,28 +121,25 @@ public class VehicleExcelService {
                 int col = 0;
 
                 createCenterCell(row, col++, String.valueOf(rowIdx), centerStyle);   // No
-                createCenterCell(row, col++, stageLabel(v.getStage()), centerStyle);  // 상태
                 createCenterCell(row, col++, formatInstant(v.getCreatedAt()), centerStyle);  // 등록일
                 createCenterCell(row, col++, safe(v.getVehicleNo()), centerStyle);  // 차량번호
                 createCenterCell(row, col++, safe(v.getModelName()), centerStyle);  // 차량명
                 createCenterCell(row, col++, safe(v.getVin()), centerStyle);  // 차대번호
                 createCenterCell(row, col++, v.getModelYear() != null ? String.valueOf(v.getModelYear()) : "", centerStyle);  // 연식
-                createCenterCell(row, col++, safe(v.getCarType()), centerStyle);  // 차종
-                createCenterCell(row, col++, safe(v.getVehicleUse()), centerStyle);  // 용도
-                createCenterCell(row, col++, safe(v.getOwnerName()), centerStyle);  // 소유자
                 createCenterCell(row, col++, v.getMileageKm() != null ? String.valueOf(v.getMileageKm()) : "", centerStyle);  // 주행거리
                 createCenterCell(row, col++, v.getDisplacement() != null ? String.valueOf(v.getDisplacement()) : "", centerStyle);  // 배기량
-                createCenterCell(row, col++, safe(v.getFuelType()), centerStyle);  // 연료
-                createCenterCell(row, col++, v.getTransmission() != null ? v.getTransmission().name() : "", centerStyle);  // 변속기
                 createCenterCell(row, col++, safe(v.getColor()), centerStyle);  // 색상
                 createCenterCell(row, col++, formatDate(v.getFirstRegistrationDate()), centerStyle);  // 최초등록일
-                createCenterCell(row, col++, safe(v.getShipperName()), centerStyle);  // 화주명
                 Cell priceCell1 = row.createCell(col++);
                 if (v.getPurchasePrice() != null) priceCell1.setCellValue(v.getPurchasePrice());
                 else priceCell1.setCellValue("");
                 priceCell1.setCellStyle(numberStyle);  // 매입가
                 createCenterCell(row, col++, formatDate(v.getPurchaseDate()), centerStyle);  // 매입일
                 createCenterCell(row, col++, formatDate(v.getDeRegistrationDate()), centerStyle);  // 말소등록일
+                createCenterCell(row, col++, formatDate(v.getLicenseDate()), centerStyle);  // 면허일
+                createCenterCell(row, col++, safe(v.getOwnerName()), centerStyle);  // 소유자
+                createCenterCell(row, col++, ownerTypeLabel(v.getOwnerType()), centerStyle);  // 소유자유형
+                createCenterCell(row, col++, safe(v.getShipperName()), centerStyle);  // 화주명
 
                 rowIdx++;
             }
@@ -206,28 +208,24 @@ public class VehicleExcelService {
                 int col = 0;
 
                 createCenterCell(row, col++, String.valueOf(rowIdx), centerStyle2);
-                createCenterCell(row, col++, stageLabel(v.getStage()), centerStyle2);
                 createCenterCell(row, col++, formatInstant(v.getCreatedAt()), centerStyle2);
                 createCenterCell(row, col++, safe(v.getVehicleNo()), centerStyle2);
                 createCenterCell(row, col++, safe(v.getModelName()), centerStyle2);
                 createCenterCell(row, col++, safe(v.getVin()), centerStyle2);
                 createCenterCell(row, col++, v.getModelYear() != null ? String.valueOf(v.getModelYear()) : "", centerStyle2);
-                createCenterCell(row, col++, safe(v.getCarType()), centerStyle2);
-                createCenterCell(row, col++, safe(v.getVehicleUse()), centerStyle2);
-                createCenterCell(row, col++, safe(v.getOwnerName()), centerStyle2);
                 createCenterCell(row, col++, v.getMileageKm() != null ? String.valueOf(v.getMileageKm()) : "", centerStyle2);
                 createCenterCell(row, col++, v.getDisplacement() != null ? String.valueOf(v.getDisplacement()) : "", centerStyle2);
-                createCenterCell(row, col++, safe(v.getFuelType()), centerStyle2);
-                createCenterCell(row, col++, v.getTransmission() != null ? v.getTransmission().name() : "", centerStyle2);
                 createCenterCell(row, col++, safe(v.getColor()), centerStyle2);
                 createCenterCell(row, col++, formatDate(v.getFirstRegistrationDate()), centerStyle2);
-                createCenterCell(row, col++, safe(v.getShipperName()), centerStyle2);
+                createCenterCell(row, col++, safe(v.getOwnerName()), centerStyle2);
+                createCenterCell(row, col++, ownerTypeLabel(v.getOwnerType()), centerStyle2);
                 Cell priceCell2 = row.createCell(col++);
                 if (v.getPurchasePrice() != null) priceCell2.setCellValue(v.getPurchasePrice());
                 else priceCell2.setCellValue("");
                 priceCell2.setCellStyle(numberStyle2);
                 createCenterCell(row, col++, formatDate(v.getPurchaseDate()), centerStyle2);
                 createCenterCell(row, col++, formatDate(v.getDeRegistrationDate()), centerStyle2);
+                createCenterCell(row, col++, safe(v.getShipperName()), centerStyle2);
 
                 rowIdx++;
             }
@@ -295,10 +293,11 @@ public class VehicleExcelService {
                     .collect(Collectors.toList());
         }
 
-        // 소유자 주민번호/주소 조회: vehicleId → IdCardDocument 필드
+        // 소유자 주민번호/주소/이름 조회: vehicleId → IdCardDocument 필드
         Map<Long, String> ownerIdNumberMap = new HashMap<>();
         Map<Long, String> ownerAddressMap = new HashMap<>();
-        buildOwnerIdCardMaps(companyId, filtered, ownerIdNumberMap, ownerAddressMap);
+        Map<Long, String> ownerHolderNameMap = new HashMap<>();
+        buildOwnerIdCardMaps(companyId, filtered, ownerIdNumberMap, ownerAddressMap, ownerHolderNameMap);
 
         String sheetName = isIndividual ? "개인" : "그밖의 사업자";
 
@@ -307,7 +306,7 @@ public class VehicleExcelService {
             CellStyle numberStyle = wb.createCellStyle();
             numberStyle.setDataFormat(wb.createDataFormat().getFormat("#,##0"));
 
-            createRefundSheet(wb, sheetName, filtered, headerStyle, numberStyle, ownerIdNumberMap, ownerAddressMap);
+            createRefundSheet(wb, sheetName, filtered, headerStyle, numberStyle, ownerIdNumberMap, ownerAddressMap, ownerHolderNameMap);
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             wb.write(out);
@@ -349,18 +348,21 @@ public class VehicleExcelService {
 
         Map<Long, String> ownerIdNumberMap = new HashMap<>();
         Map<Long, String> ownerAddressMap = new HashMap<>();
-        buildOwnerIdCardMaps(companyId, filtered, ownerIdNumberMap, ownerAddressMap);
+        Map<Long, String> ownerHolderNameMap = new HashMap<>();
+        buildOwnerIdCardMaps(companyId, filtered, ownerIdNumberMap, ownerAddressMap, ownerHolderNameMap);
 
         java.util.List<exps.cariv.domain.vehicle.dto.response.RefundExcelPreviewRow> rows = new java.util.ArrayList<>();
         int idx = 1;
         for (Vehicle v : filtered) {
+            // 신분증 OCR 이름 우선, 없으면 차량등록증 소유자명
+            String name = ownerHolderNameMap.getOrDefault(v.getId(), safe(v.getOwnerName()));
             rows.add(new exps.cariv.domain.vehicle.dto.response.RefundExcelPreviewRow(
                     idx++,
                     formatDate(v.getPurchaseDate()),
                     safe(v.getVehicleNo()),
                     safe(v.getModelName()),
                     safe(v.getVin()),
-                    safe(v.getOwnerName()),
+                    name,
                     safe(ownerIdNumberMap.getOrDefault(v.getId(), "")),
                     safe(ownerAddressMap.getOrDefault(v.getId(), "")),
                     v.getPurchasePrice() != null ? v.getPurchasePrice() : 0L,
@@ -380,7 +382,8 @@ public class VehicleExcelService {
     private void createRefundSheet(XSSFWorkbook wb, String sheetName, List<Vehicle> vehicles,
                                     CellStyle headerStyle, CellStyle numberStyle,
                                     Map<Long, String> ownerIdNumberMap,
-                                    Map<Long, String> ownerAddressMap) {
+                                    Map<Long, String> ownerAddressMap,
+                                    Map<Long, String> ownerHolderNameMap) {
         Sheet sheet = wb.createSheet(sheetName);
 
         Row headerRow = sheet.createRow(0);
@@ -409,7 +412,9 @@ public class VehicleExcelService {
             createCenterCell(row, col++, safe(v.getVehicleNo()), cs);                 // 차량번호
             createCenterCell(row, col++, safe(v.getModelName()), cs);                 // 차량명
             createCenterCell(row, col++, safe(v.getVin()), cs);                       // 차대번호
-            createCenterCell(row, col++, safe(v.getOwnerName()), cs);                 // 소유자
+            // 신분증 OCR 이름 우선, 없으면 차량등록증 소유자명
+            String ownerName = ownerHolderNameMap.getOrDefault(v.getId(), safe(v.getOwnerName()));
+            createCenterCell(row, col++, ownerName, cs);                              // 소유자
             createCenterCell(row, col++, safe(ownerIdNumberMap.getOrDefault(v.getId(), "")), cs); // 소유자 주민번호
             createCenterCell(row, col++, safe(ownerAddressMap.getOrDefault(v.getId(), "")), cs);  // 공급자(소유자) 주소
             Cell priceCell = row.createCell(col++);
@@ -430,28 +435,43 @@ public class VehicleExcelService {
     }
 
     /**
-     * 차량 ID → 소유자 주민번호/주소 맵 생성.
-     * 차량에 연결된 ID_CARD(소유자 신분증) 문서에서 idNumber, idAddress를 가져온다.
+     * 차량 ID → 소유자 주민번호/주소/이름 맵 생성.
+     * 차량에 연결된 ID_CARD(소유자 신분증) 문서의 OcrParseJob 결과에서 가져온다.
+     * (소유자 신분증은 VehicleOwnerDocument 엔티티로, OCR 데이터가 OcrParseJob.resultJson에 저장됨)
      */
     private void buildOwnerIdCardMaps(Long companyId, List<Vehicle> vehicles,
-                                       Map<Long, String> idNumberMap, Map<Long, String> addressMap) {
+                                       Map<Long, String> idNumberMap, Map<Long, String> addressMap,
+                                       Map<Long, String> holderNameMap) {
         for (Vehicle v : vehicles) {
             try {
                 Optional<Document> idCardDoc = documentRepo
                         .findTopByCompanyIdAndRefTypeAndRefIdAndTypeOrderByUploadedAtDescIdDesc(
                                 companyId, DocumentRefType.VEHICLE, v.getId(), DocumentType.ID_CARD);
-                if (idCardDoc.isPresent() && idCardDoc.get() instanceof IdCardDocument idc) {
-                    String idNum = idc.getIdNumber();
-                    if (idNum != null && !idNum.isBlank()) {
-                        idNumberMap.put(v.getId(), idNum);
-                    }
-                    String addr = idc.getIdAddress();
-                    if (addr != null && !addr.isBlank()) {
-                        addressMap.put(v.getId(), addr);
-                    }
+                if (idCardDoc.isEmpty()) continue;
+
+                // OcrParseJob에서 OCR 결과 JSON을 가져와 파싱
+                Optional<OcrParseJob> job = ocrJobRepo.findTopByCompanyIdAndVehicleDocumentIdAndStatusOrderByCreatedAtDesc(
+                        companyId, idCardDoc.get().getId(), OcrJobStatus.SUCCEEDED);
+                if (job.isEmpty() || job.get().getResultJson() == null) continue;
+
+                JsonNode root = objectMapper.readTree(job.get().getResultJson());
+                JsonNode parsed = root.path("parsed");
+                if (parsed.isMissingNode() || !parsed.isObject()) parsed = root;
+
+                String idNum = parsed.path("idNumber").asText(null);
+                if (idNum != null && !idNum.isBlank()) {
+                    idNumberMap.put(v.getId(), idNum.trim());
+                }
+                String addr = parsed.path("idAddress").asText(null);
+                if (addr != null && !addr.isBlank()) {
+                    addressMap.put(v.getId(), addr.trim());
+                }
+                String name = parsed.path("holderName").asText(null);
+                if (name != null && !name.isBlank()) {
+                    holderNameMap.put(v.getId(), name.trim());
                 }
             } catch (Exception e) {
-                log.debug("소유자 신분증 조회 실패 vehicleId={}", v.getId(), e);
+                log.debug("소유자 신분증 OCR 조회 실패 vehicleId={}", v.getId(), e);
             }
         }
     }
@@ -488,6 +508,16 @@ public class VehicleExcelService {
 
         // 헤더 행 반복 인쇄
         sheet.setRepeatingRows(new CellRangeAddress(0, 0, 0, colCount - 1));
+    }
+
+    private String ownerTypeLabel(OwnerType type) {
+        if (type == null) return "";
+        return switch (type) {
+            case INDIVIDUAL -> "개인";
+            case DEALER_INDIVIDUAL -> "매매상사(개인)";
+            case DEALER_CORPORATE -> "매매상사(법인)";
+            case CORPORATE_OTHER -> "그밖의 사업자";
+        };
     }
 
     private String stageLabel(VehicleStage stage) {

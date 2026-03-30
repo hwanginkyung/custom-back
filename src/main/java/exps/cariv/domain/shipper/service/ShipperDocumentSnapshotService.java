@@ -18,15 +18,26 @@ import exps.cariv.domain.shipper.entity.Shipper;
 import exps.cariv.domain.shipper.repository.BizRegDocumentRepository;
 import exps.cariv.domain.shipper.repository.IdCardDocumentRepository;
 import exps.cariv.domain.shipper.repository.ShipperRepository;
+import exps.cariv.global.aws.S3ObjectReader;
+import exps.cariv.global.aws.S3Upload;
 import exps.cariv.global.exception.CustomException;
 import exps.cariv.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.geom.AffineTransform;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 
 /**
  * 화주 OCR 문서(BIZ_REG/ID_CARD) 스냅샷 조회/수정 서비스.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ShipperDocumentSnapshotService {
@@ -36,6 +47,8 @@ public class ShipperDocumentSnapshotService {
     private final ShipperRepository shipperRepo;
     private final OcrParseJobRepository jobRepo;
     private final OcrResultNormalizer ocrResultNormalizer;
+    private final S3ObjectReader s3Reader;
+    private final S3Upload s3Upload;
 
     @Transactional(readOnly = true)
     public BizRegDocumentResponse getBizRegSnapshot(Long companyId, Long documentId) {
@@ -133,6 +146,53 @@ public class ShipperDocumentSnapshotService {
         );
         doc.applyManualSnapshot(snapshot);
         idCardDocRepo.save(doc);
+
+        // 회전 요청이 있으면 S3 이미지를 회전 후 덮어쓰기
+        if (req.rotateDegrees() != null && req.rotateDegrees() % 360 != 0) {
+            rotateAndOverwriteS3Image(doc.getS3Key(), req.rotateDegrees());
+        }
+    }
+
+    private void rotateAndOverwriteS3Image(String s3Key, int degrees) {
+        try {
+            byte[] original = s3Reader.readBytes(s3Key);
+            if (original == null) {
+                log.warn("[ImageRotate] S3 object not found: {}", s3Key);
+                return;
+            }
+
+            BufferedImage src = ImageIO.read(new ByteArrayInputStream(original));
+            if (src == null) {
+                log.warn("[ImageRotate] Cannot read image: {}", s3Key);
+                return;
+            }
+
+            int normalizedDeg = ((degrees % 360) + 360) % 360;
+            boolean swap = (normalizedDeg == 90 || normalizedDeg == 270);
+            int newW = swap ? src.getHeight() : src.getWidth();
+            int newH = swap ? src.getWidth() : src.getHeight();
+
+            BufferedImage rotated = new BufferedImage(newW, newH, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g2d = rotated.createGraphics();
+            g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+
+            AffineTransform at = new AffineTransform();
+            at.translate(newW / 2.0, newH / 2.0);
+            at.rotate(Math.toRadians(normalizedDeg));
+            at.translate(-src.getWidth() / 2.0, -src.getHeight() / 2.0);
+            g2d.drawImage(src, at, null);
+            g2d.dispose();
+
+            String format = s3Key.toLowerCase().endsWith(".png") ? "png" : "jpg";
+            String contentType = format.equals("png") ? "image/png" : "image/jpeg";
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(rotated, format, baos);
+
+            s3Upload.uploadBytes(s3Key, baos.toByteArray(), contentType);
+            log.info("[ImageRotate] Rotated {}° and saved: {}", normalizedDeg, s3Key);
+        } catch (Exception e) {
+            log.error("[ImageRotate] Failed to rotate image: {}", s3Key, e);
+        }
     }
 
     private void syncShipperMasterFromBizReg(Long companyId, Long shipperId,

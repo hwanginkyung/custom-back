@@ -187,6 +187,11 @@ public class Vehicle extends TenantEntity {
         this.deRegistrationDate = date;
     }
 
+    /** 중량 업데이트 (신고필증에서 수정 시) */
+    public void patchWeight(Integer weight) {
+        this.weight = weight;
+    }
+
     /** 말소 전체출력 최초 실행 기록. 이미 기록되어 있으면 무시합니다. */
     public void markMalsoPrinted() {
         if (this.malsoPrintedAt == null) {

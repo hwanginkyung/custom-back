@@ -281,6 +281,13 @@ public class VehicleCommandService {
                 companyId, DocumentRefType.SHIPPER, shipperId, type
         ).isPresent();
         if (!exists) {
+            // 합본(BIZ_ID_COMBINED)이 있으면 BIZ_REGISTRATION, ID_CARD 둘 다 통과
+            if (type == DocumentType.BIZ_REGISTRATION || type == DocumentType.ID_CARD) {
+                boolean combinedExists = documentRepo.findTopByCompanyIdAndRefTypeAndRefIdAndTypeOrderByUploadedAtDescIdDesc(
+                        companyId, DocumentRefType.SHIPPER, shipperId, DocumentType.BIZ_ID_COMBINED
+                ).isPresent();
+                if (combinedExists) return;
+            }
             throw new CustomException(
                     ErrorCode.REQUIRED_DOCUMENT_MISSING,
                     "화주 필수문서가 누락되었습니다. shipperId=" + shipperId + ", type=" + type.name()

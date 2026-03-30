@@ -6,6 +6,7 @@ package exps.cariv.domain.vehicle.dto.request;
 public record OwnerIdCardSnapshotUpdateRequest(
         String holderName,
         String idNumber,
-        String idAddress
+        String idAddress,
+        Integer rotateDegrees
 ) {
 }

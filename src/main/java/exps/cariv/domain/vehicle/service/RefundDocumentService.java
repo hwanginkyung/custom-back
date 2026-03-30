@@ -1,20 +1,21 @@
 package exps.cariv.domain.vehicle.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import exps.cariv.domain.document.entity.Document;
 import exps.cariv.domain.document.entity.DocumentRefType;
 import exps.cariv.domain.document.entity.DocumentType;
 import exps.cariv.domain.document.repository.DocumentRepository;
+import exps.cariv.domain.ocr.entity.OcrJobStatus;
+import exps.cariv.domain.ocr.entity.OcrParseJob;
+import exps.cariv.domain.ocr.repository.OcrParseJobRepository;
 import exps.cariv.domain.vehicle.entity.Vehicle;
 import exps.cariv.domain.vehicle.repository.VehicleRepository;
 import exps.cariv.domain.vehicle.repository.VehicleSpecification;
+import exps.cariv.domain.malso.print.XlsxToPdfConverter;
 import exps.cariv.global.aws.S3ObjectReader;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.PDPageContentStream;
-import org.apache.pdfbox.pdmodel.common.PDRectangle;
-import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
@@ -57,8 +58,11 @@ public class RefundDocumentService {
     private final VehicleExcelService excelService;
     private final DocumentRepository documentRepo;
     private final S3ObjectReader s3ObjectReader;
+    private final OcrParseJobRepository ocrJobRepo;
+    private final ObjectMapper objectMapper;
+    private final XlsxToPdfConverter pdfConverter;
 
-    private static final String TEMPLATE_PATH = "templates/excel/매매계약서_템플릿.xls";
+    private static final String TEMPLATE_PATH = "templates/excel/환급계약서_템플릿.xls";
     private static final String FONT_PATH = "templates/fonts/NanumGothic.ttf";
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter DATE_KR_FMT = DateTimeFormatter.ofPattern("yyyy년 MM월 dd일");
@@ -90,19 +94,12 @@ public class RefundDocumentService {
             for (Vehicle v : vehicles) {
                 String folderName = buildFolderName(v);
 
-                // 매매계약서 PDF 생성
+                // 매매계약서(자동차양도증명서) PDF 생성
                 try {
                     byte[] contractPdf = generateContractPdf(v);
-                    addZipEntry(zos, folderName + "/매매계약서.pdf", contractPdf);
+                    addZipEntry(zos, folderName + "/자동차양도증명서.pdf", contractPdf);
                 } catch (Exception e) {
                     log.warn("매매계약서 PDF 생성 실패: vehicleId={}, error={}", v.getId(), e.getMessage());
-                    // fallback: 엑셀 버전이라도 넣기
-                    try {
-                        byte[] contractXls = generateContractExcel(v);
-                        addZipEntry(zos, folderName + "/매매계약서.xls", contractXls);
-                    } catch (Exception ex) {
-                        log.warn("매매계약서 엑셀 fallback도 실패: vehicleId={}", v.getId());
-                    }
                 }
 
                 // 말소증 (S3)
@@ -162,228 +159,145 @@ public class RefundDocumentService {
         return vehicleNo + "_" + vin;
     }
 
-    // ─── 매매계약서 PDF 생성 (PDFBox) ───
+    // ─── 자동차양도증명서 PDF 생성 ───
 
     /**
-     * 매매계약서를 A4 1장 PDF로 생성.
-     * 계약서 본문(당사자 정보, 차량 정보, 계약 조건)만 담는다.
+     * 자동차양도증명서(별지 16호 서식) PDF 생성.
+     * <ol>
+     *   <li>입력시트에 값 세팅 → 계약서 시트 수식이 자동 참조</li>
+     *   <li>FormulaEvaluator로 수식 평가 후 값 고정</li>
+     *   <li>입력시트/Sheet1 숨김, 2~5페이지 삭제</li>
+     *   <li>LibreOffice로 PDF 변환 (A4 1페이지)</li>
+     * </ol>
      */
     private byte[] generateContractPdf(Vehicle v) throws IOException {
-        try (PDDocument doc = new PDDocument()) {
-            PDPage page = new PDPage(PDRectangle.A4);
-            doc.addPage(page);
-
-            PDType0Font font;
-            try (InputStream fontIs = new ClassPathResource(FONT_PATH).getInputStream()) {
-                font = PDType0Font.load(doc, fontIs);
-            } catch (Exception e) {
-                log.warn("한글 폰트 로드 실패, 시스템 폰트 fallback 시도: {}", e.getMessage());
-                // 폰트가 없으면 엑셀 fallback으로 던진다
-                throw new IOException("한글 폰트(NanumGothic.ttf) 필요: " + e.getMessage(), e);
-            }
-
-            float pageWidth = PDRectangle.A4.getWidth();
-            float margin = 50;
-            float contentWidth = pageWidth - 2 * margin;
-            float y = PDRectangle.A4.getHeight() - margin;
-
-            try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
-                // ── 제목 ──
-                y = drawCenteredText(cs, font, 18, "자동차 매매 계약서", pageWidth, y);
-                y -= 30;
-
-                // ── 계약 날짜 ──
-                String dateStr = v.getPurchaseDate() != null
-                        ? v.getPurchaseDate().format(DATE_KR_FMT)
-                        : "____년 __월 __일";
-                y = drawText(cs, font, 10, "계약일: " + dateStr, margin, y);
-                y -= 25;
-
-                // ── 구분선 ──
-                y = drawLine(cs, margin, y, margin + contentWidth, y);
-                y -= 20;
-
-                // ── 당사자 정보 ──
-                y = drawText(cs, font, 12, "【 당 사 자 】", margin, y);
-                y -= 22;
-                y = drawLabelValue(cs, font, 10, "양도인(매도인)", safe(v.getOwnerName()), margin, y, contentWidth);
-                y -= 18;
-                y = drawLabelValue(cs, font, 10, "주민등록번호", safe(v.getOwnerId()), margin, y, contentWidth);
-                y -= 30;
-
-                // ── 차량 정보 ──
-                y = drawText(cs, font, 12, "【 매매 목적물(자동차) 】", margin, y);
-                y -= 22;
-
-                String[][] vehicleFields = {
-                        {"자동차등록번호", safe(v.getVehicleNo())},
-                        {"차명", safe(v.getModelName())},
-                        {"차종(연식)", safe(v.getCarType()) + (v.getModelYear() != null ? "(" + v.getModelYear() + ")" : "")},
-                        {"차대번호", safe(v.getVin())},
-                        {"주행거리", v.getMileageKm() != null ? v.getMileageKm() + " km" : "-"},
-                        {"색상", safe(v.getColor()).isEmpty() ? "-" : safe(v.getColor())},
-                };
-
-                for (String[] field : vehicleFields) {
-                    y = drawLabelValue(cs, font, 10, field[0], field[1], margin, y, contentWidth);
-                    y -= 16;
-                }
-                y -= 10;
-
-                // ── 매매 금액 ──
-                y = drawText(cs, font, 12, "【 매매 대금 】", margin, y);
-                y -= 22;
-                String priceStr = v.getPurchasePrice() != null && v.getPurchasePrice() > 0
-                        ? PRICE_FMT.format(v.getPurchasePrice()) + " 원"
-                        : "_____________ 원";
-                y = drawLabelValue(cs, font, 11, "매매금액", priceStr, margin, y, contentWidth);
-                y -= 30;
-
-                // ── 구분선 ──
-                y = drawLine(cs, margin, y, margin + contentWidth, y);
-                y -= 20;
-
-                // ── 계약 조건 ──
-                y = drawText(cs, font, 12, "【 계약 조건 】", margin, y);
-                y -= 20;
-
-                String[] clauses = {
-                        "제1조  양도인은 위 자동차를 현 상태대로 양수인에게 매도하고,",
-                        "       양수인은 이를 매수한다.",
-                        "제2조  양도인은 위 자동차에 대하여 소유권이전에 필요한 일체의",
-                        "       서류를 양수인에게 교부한다.",
-                        "제3조  양도인은 매매 목적물에 대한 저당권, 압류, 가압류 등",
-                        "       권리의 하자가 없음을 보증한다.",
-                        "제4조  본 계약에 명시되지 않은 사항은 민법 및 관련 법규에 따른다.",
-                };
-
-                for (String clause : clauses) {
-                    y = drawText(cs, font, 9, clause, margin, y);
-                    y -= 14;
-                }
-                y -= 25;
-
-                // ── 서명란 ──
-                y = drawLine(cs, margin, y, margin + contentWidth, y);
-                y -= 25;
-
-                y = drawText(cs, font, 10,
-                        "위 계약을 증명하기 위하여 본 계약서를 작성하고 양 당사자가 서명 날인한다.",
-                        margin, y);
-                y -= 30;
-
-                y = drawText(cs, font, 10, dateStr, margin + contentWidth / 2 - 50, y);
-                y -= 30;
-
-                y = drawLabelValue(cs, font, 10, "양도인(매도인)", safe(v.getOwnerName()) + "  (인)", margin, y, contentWidth);
-                y -= 20;
-                y = drawLabelValue(cs, font, 10, "주민등록번호", safe(v.getOwnerId()), margin, y, contentWidth);
-                y -= 25;
-
-                y = drawLabelValue(cs, font, 10, "양수인(매수인)", "____________________  (인)", margin, y, contentWidth);
-                y -= 20;
-                drawLabelValue(cs, font, 10, "사업자등록번호", "____________________", margin, y, contentWidth);
-            }
-
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            doc.save(out);
-            return out.toByteArray();
-        }
-    }
-
-    // ─── PDF 텍스트 헬퍼 ───
-
-    private float drawText(PDPageContentStream cs, PDType0Font font, float fontSize,
-                           String text, float x, float y) throws IOException {
-        cs.beginText();
-        cs.setFont(font, fontSize);
-        cs.newLineAtOffset(x, y);
-        cs.showText(text);
-        cs.endText();
-        return y;
-    }
-
-    private float drawCenteredText(PDPageContentStream cs, PDType0Font font, float fontSize,
-                                   String text, float pageWidth, float y) throws IOException {
-        float textWidth = font.getStringWidth(text) / 1000 * fontSize;
-        float x = (pageWidth - textWidth) / 2;
-        return drawText(cs, font, fontSize, text, x, y);
-    }
-
-    private float drawLabelValue(PDPageContentStream cs, PDType0Font font, float fontSize,
-                                 String label, String value, float x, float y, float contentWidth) throws IOException {
-        String labelText = label + " :  ";
-        cs.beginText();
-        cs.setFont(font, fontSize);
-        cs.newLineAtOffset(x + 20, y);
-        cs.showText(labelText + value);
-        cs.endText();
-        return y;
-    }
-
-    private float drawLine(PDPageContentStream cs, float x1, float y1, float x2, float y2) throws IOException {
-        cs.setLineWidth(0.5f);
-        cs.moveTo(x1, y1);
-        cs.lineTo(x2, y2);
-        cs.stroke();
-        return y1;
-    }
-
-    // ─── 매매계약서 엑셀 (fallback) ───
-
-    private byte[] generateContractExcel(Vehicle v) throws IOException {
         ClassPathResource resource = new ClassPathResource(TEMPLATE_PATH);
 
+        byte[] xlsBytes;
         try (InputStream is = resource.getInputStream();
              HSSFWorkbook wb = new HSSFWorkbook(is)) {
 
-            Sheet sheet = wb.getSheet("계약서");
-            if (sheet == null) {
-                sheet = wb.getSheetAt(1); // fallback: 두 번째 시트
-            }
+            // 소유자 OCR 정보 가져오기
+            String ocrIdNumber = "";
+            String ocrAddress = "";
+            String ocrHolderName = "";
+            try {
+                Optional<Document> idCardDoc = documentRepo
+                        .findTopByCompanyIdAndRefTypeAndRefIdAndTypeOrderByUploadedAtDescIdDesc(
+                                v.getCompanyId(), DocumentRefType.VEHICLE, v.getId(), DocumentType.ID_CARD);
+                if (idCardDoc.isPresent()) {
+                    Optional<OcrParseJob> job = ocrJobRepo.findTopByCompanyIdAndVehicleDocumentIdAndStatusOrderByCreatedAtDesc(
+                            v.getCompanyId(), idCardDoc.get().getId(), OcrJobStatus.SUCCEEDED);
+                    if (job.isPresent() && job.get().getResultJson() != null) {
+                        JsonNode root = objectMapper.readTree(job.get().getResultJson());
+                        JsonNode parsed = root.path("parsed");
+                        if (parsed.isMissingNode() || !parsed.isObject()) parsed = root;
+                        ocrIdNumber = safe(parsed.path("idNumber").asText(null));
+                        ocrAddress = safe(parsed.path("idAddress").asText(null));
+                        ocrHolderName = safe(parsed.path("holderName").asText(null));
+                    }
+                }
+            } catch (Exception ignored) {}
 
-            // 날짜
-            String dateStr = formatDate(v.getPurchaseDate());
-            setCellValue(sheet, 5, 3, dateStr);
-            setCellValue(sheet, 30, 4, dateStr);
-
-            // 양도인
-            setCellValue(sheet, 5, 8, safe(v.getOwnerName()));
-            setCellValue(sheet, 31, 4, safe(v.getOwnerName()));
-
-            // 양도인 주민등록번호
-            setCellValue(sheet, 32, 4, safe(v.getOwnerId()));
-
-            // 자동차등록번호
-            setCellValue(sheet, 8, 3, safe(v.getVehicleNo()));
-
-            // 매매금액
-            if (v.getPurchasePrice() != null && v.getPurchasePrice() > 0) {
-                setCellValue(sheet, 8, 7, v.getPurchasePrice());
-            }
-
-            // 차종(연식)
+            String ownerName = ocrHolderName.isBlank() ? safe(v.getOwnerName()) : ocrHolderName;
+            String idNumber = ocrIdNumber.isBlank() ? safe(v.getOwnerId()) : ocrIdNumber;
             String carTypeYear = safe(v.getCarType());
-            if (v.getModelYear() != null) {
-                carTypeYear += "(" + v.getModelYear() + ")";
+            if (v.getModelYear() != null) carTypeYear += "(" + v.getModelYear() + ")";
+            String priceStr = (v.getPurchasePrice() != null && v.getPurchasePrice() > 0)
+                    ? PRICE_FMT.format(v.getPurchasePrice()) : "";
+
+            // 날짜: 오늘 날짜 사용
+            String dateStr = LocalDate.now().format(DATE_FMT);
+
+            // --- 1) 입력시트(Sheet 0)에 값 세팅 → 계약서 수식이 이 값을 참조 ---
+            Sheet inputSheet = wb.getSheetAt(0);
+            setCellValue(inputSheet, 2, 1, dateStr);            // 날짜
+            setCellValue(inputSheet, 3, 1, ownerName);           // 양도인
+            setCellValue(inputSheet, 4, 1, safe(v.getVehicleNo())); // 자동차등록번호
+            setCellValue(inputSheet, 5, 1, carTypeYear);         // 차종(연식)
+            setCellValue(inputSheet, 6, 1, safe(v.getModelName())); // 차명
+            setCellValue(inputSheet, 7, 1, safe(v.getVin()));    // 차대번호
+            setCellValue(inputSheet, 8, 1, priceStr);            // 매매금액
+            setCellValue(inputSheet, 9, 1, idNumber);            // 주민등록번호
+            setCellValue(inputSheet, 10, 1, ocrAddress);         // 주소
+
+            // --- 2) 수식 평가 후 값으로 고정 ---
+            org.apache.poi.hssf.usermodel.HSSFFormulaEvaluator evaluator =
+                    new org.apache.poi.hssf.usermodel.HSSFFormulaEvaluator(wb);
+            Sheet contractSheet = wb.getSheet("계약서");
+            if (contractSheet == null) contractSheet = wb.getSheetAt(1);
+
+            // 계약서 시트의 모든 수식 셀을 평가하고 값으로 대체
+            for (int r = 0; r <= 45; r++) {
+                Row row = contractSheet.getRow(r);
+                if (row == null) continue;
+                for (Cell cell : row) {
+                    if (cell.getCellType() == org.apache.poi.ss.usermodel.CellType.FORMULA) {
+                        try {
+                            org.apache.poi.ss.usermodel.CellValue cv = evaluator.evaluate(cell);
+                            if (cv != null) {
+                                switch (cv.getCellType()) {
+                                    case STRING:
+                                        cell.setCellValue(cv.getStringValue());
+                                        break;
+                                    case NUMERIC:
+                                        // 숫자 → 문자열로 변환 (서식 유지)
+                                        String formatted = cv.getNumberValue() == 0.0 ? ""
+                                                : String.valueOf((long) cv.getNumberValue());
+                                        cell.setCellValue(formatted);
+                                        break;
+                                    default:
+                                        cell.setCellValue("");
+                                        break;
+                                }
+                            }
+                        } catch (Exception e) {
+                            // 수식 평가 실패 시 빈 값으로 대체
+                            cell.setCellValue("");
+                        }
+                    }
+                }
             }
-            setCellValue(sheet, 9, 3, carTypeYear);
 
-            // 차명
-            setCellValue(sheet, 10, 3, safe(v.getModelName()));
-
-            // 차대번호
-            setCellValue(sheet, 11, 3, safe(v.getVin()));
-
-            // 주행거리
-            if (v.getMileageKm() != null) {
-                setCellValue(sheet, 12, 6, v.getMileageKm() + "km");
+            // --- 3) 2~5페이지 삭제 (Row 46~229) ---
+            int lastRow = contractSheet.getLastRowNum();
+            for (int r = lastRow; r >= 46; r--) {
+                Row row = contractSheet.getRow(r);
+                if (row != null) contractSheet.removeRow(row);
             }
+
+            // --- 4) 입력시트/Sheet1 완전 삭제 (숨김이 아니라 삭제) ---
+            // 계약서 시트만 남기고 나머지 모두 삭제 (역순으로)
+            int contractIdx = wb.getSheetIndex("계약서");
+            for (int i = wb.getNumberOfSheets() - 1; i >= 0; i--) {
+                if (i != contractIdx) {
+                    wb.removeSheetAt(i);
+                }
+            }
+            // 삭제 후 계약서가 유일한 시트 (index 0)
+            wb.setActiveSheet(0);
+
+            // --- 5) A4 1페이지 인쇄 설정 ---
+            Sheet onlySheet = wb.getSheetAt(0);
+            wb.setPrintArea(0, 0, 11, 0, 45);
+            onlySheet.setFitToPage(true);
+            onlySheet.getPrintSetup().setFitWidth((short) 1);
+            onlySheet.getPrintSetup().setFitHeight((short) 1);
+            onlySheet.getPrintSetup().setPaperSize(org.apache.poi.ss.usermodel.PrintSetup.A4_PAPERSIZE);
+            onlySheet.getPrintSetup().setLandscape(false);
+            // 마진을 최소로 (0.05인치) → LibreOffice가 A4 안에 확실히 맞추도록
+            onlySheet.setMargin(Sheet.TopMargin, 0.05);
+            onlySheet.setMargin(Sheet.BottomMargin, 0.05);
+            onlySheet.setMargin(Sheet.LeftMargin, 0.05);
+            onlySheet.setMargin(Sheet.RightMargin, 0.05);
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             wb.write(out);
-            return out.toByteArray();
+            xlsBytes = out.toByteArray();
         }
+
+        // XLS → PDF 변환 (LibreOffice headless)
+        return pdfConverter.convertXls(xlsBytes);
     }
 
     // ─── 유틸 ───

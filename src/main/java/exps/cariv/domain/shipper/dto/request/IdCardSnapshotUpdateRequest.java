@@ -7,5 +7,6 @@ public record IdCardSnapshotUpdateRequest(
         String holderName,
         String idNumber,
         String idAddress,
-        String issueDate
+        String issueDate,
+        Integer rotateDegrees
 ) {}

@@ -21,11 +21,22 @@ public class XlsxToPdfConverter {
      * LibreOffice headless 모드를 사용합니다.
      */
     public byte[] convert(byte[] xlsxBytes) {
+        return convertWithExtension(xlsxBytes, "xlsx");
+    }
+
+    /**
+     * XLS (구 형식) 바이트를 받아 PDF 바이트로 변환합니다.
+     */
+    public byte[] convertXls(byte[] xlsBytes) {
+        return convertWithExtension(xlsBytes, "xls");
+    }
+
+    private byte[] convertWithExtension(byte[] inputBytes, String extension) {
         Path tempDir = null;
         try {
             tempDir = Files.createTempDirectory("xlsx-to-pdf-");
-            Path xlsxFile = tempDir.resolve("input.xlsx");
-            Files.write(xlsxFile, xlsxBytes);
+            Path xlsxFile = tempDir.resolve("input." + extension);
+            Files.write(xlsxFile, inputBytes);
 
             ProcessBuilder pb = new ProcessBuilder(
                     "libreoffice",

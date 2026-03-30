@@ -18,9 +18,14 @@ public record VehicleListResponse(
         String shipperName,                  // 화주명
         String ownerType,                    // 소유자유형
         String ownerName,                    // 소유자명
+        Long mileageKm,                      // 주행거리(km)
+        Integer displacement,                // 배기량(cc)
+        String color,                        // 색상
+        LocalDate firstRegistrationDate,     // 최초등록일
         LocalDate purchaseDate,              // 매입일
         Long purchasePrice,                  // 매입가
         Boolean refundApplied,               // 환급 신청 여부
         String purchaseCompanyName,          // 매입처
-        LocalDate licenseDate                // 면허일
+        LocalDate licenseDate,               // 면허일
+        LocalDate deRegistrationDate         // 말소등록일
 ) {}

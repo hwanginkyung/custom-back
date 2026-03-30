@@ -23,9 +23,9 @@ public interface BrokerConnectionRepository extends JpaRepository<BrokerConnecti
 
     /**
      * 연동 가능한 관세사 회사 목록 조회.
-     * cariv-customs 쪽 Company 테이블에서 company_name이 있는 행 = 관세사 회사.
+     * Company 테이블에서 name이 있는 행 = 관세사 회사.
      */
-    @Query(value = "SELECT c.id, c.company_name FROM company c WHERE c.company_name IS NOT NULL ORDER BY c.company_name",
+    @Query(value = "SELECT c.id, c.name FROM company c WHERE c.name IS NOT NULL ORDER BY c.name",
             nativeQuery = true)
     List<Object[]> findAllBrokerCompanies();
 }

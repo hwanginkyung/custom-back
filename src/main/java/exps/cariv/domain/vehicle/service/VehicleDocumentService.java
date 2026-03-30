@@ -27,18 +27,26 @@ import exps.cariv.domain.vehicle.entity.Vehicle;
 import exps.cariv.domain.vehicle.entity.VehicleOwnerDocument;
 import exps.cariv.domain.vehicle.repository.VehicleRepository;
 import exps.cariv.domain.vehicle.dto.response.OwnerIdCardDocumentResponse;
+import exps.cariv.global.aws.S3ObjectReader;
 import exps.cariv.global.aws.S3Upload;
 import exps.cariv.global.aws.S3Upload.UploadResult;
 import exps.cariv.domain.vehicle.dto.response.DocumentUploadResponse;
 import exps.cariv.global.exception.CustomException;
 import exps.cariv.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.geom.AffineTransform;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.List;
 import java.util.Objects;
 
@@ -50,6 +58,7 @@ import java.util.Objects;
  *
  * 경락사실확인서/매매계약서는 현재 업로드 플로우에서 비활성화되어 있습니다.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class VehicleDocumentService {
@@ -61,6 +70,7 @@ public class VehicleDocumentService {
     private final OcrQueueService ocrQueueService;
     private final OcrResultNormalizer ocrResultNormalizer;
     private final S3Upload s3Upload;
+    private final S3ObjectReader s3Reader;
     private final VehicleRepository vehicleRepo;
     private final PlatformTransactionManager txManager;
 
@@ -321,6 +331,53 @@ public class VehicleDocumentService {
         jobRepo.save(latestJob);
         doc.markOcrDraft();
         documentRepo.save(doc);
+
+        // 회전 요청이 있으면 S3 이미지를 회전 후 덮어쓰기
+        if (req.rotateDegrees() != null && req.rotateDegrees() % 360 != 0) {
+            rotateAndOverwriteS3Image(doc.getS3Key(), req.rotateDegrees());
+        }
+    }
+
+    private void rotateAndOverwriteS3Image(String s3Key, int degrees) {
+        try {
+            byte[] original = s3Reader.readBytes(s3Key);
+            if (original == null) {
+                log.warn("[ImageRotate] S3 object not found: {}", s3Key);
+                return;
+            }
+
+            BufferedImage src = ImageIO.read(new ByteArrayInputStream(original));
+            if (src == null) {
+                log.warn("[ImageRotate] Cannot read image: {}", s3Key);
+                return;
+            }
+
+            int normalizedDeg = ((degrees % 360) + 360) % 360;
+            boolean swap = (normalizedDeg == 90 || normalizedDeg == 270);
+            int newW = swap ? src.getHeight() : src.getWidth();
+            int newH = swap ? src.getWidth() : src.getHeight();
+
+            BufferedImage rotated = new BufferedImage(newW, newH, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g2d = rotated.createGraphics();
+            g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+
+            AffineTransform at = new AffineTransform();
+            at.translate(newW / 2.0, newH / 2.0);
+            at.rotate(Math.toRadians(normalizedDeg));
+            at.translate(-src.getWidth() / 2.0, -src.getHeight() / 2.0);
+            g2d.drawImage(src, at, null);
+            g2d.dispose();
+
+            String format = s3Key.toLowerCase().endsWith(".png") ? "png" : "jpg";
+            String contentType = format.equals("png") ? "image/png" : "image/jpeg";
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(rotated, format, baos);
+
+            s3Upload.uploadBytes(s3Key, baos.toByteArray(), contentType);
+            log.info("[ImageRotate] Rotated {}° and saved: {}", normalizedDeg, s3Key);
+        } catch (Exception e) {
+            log.error("[ImageRotate] Failed to rotate image: {}", s3Key, e);
+        }
     }
 
     /**

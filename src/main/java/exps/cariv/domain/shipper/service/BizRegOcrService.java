@@ -2,6 +2,8 @@ package exps.cariv.domain.shipper.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import exps.cariv.domain.document.entity.DocumentType;
+import exps.cariv.domain.notification.entity.NotificationType;
+import exps.cariv.domain.notification.service.NotificationCommandService;
 import exps.cariv.domain.ocr.entity.OcrParseJob;
 import exps.cariv.domain.shipper.dto.ParsedBizReg;
 import exps.cariv.domain.shipper.entity.BizRegDocument;
@@ -21,7 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 사업자등록증 OCR 처리 (내부 저장용, 알림 없음).
+ * 사업자등록증 OCR 처리 + 성공 알림 발송.
  */
 @Service
 @RequiredArgsConstructor
@@ -35,6 +37,7 @@ public class BizRegOcrService {
     private final BizRegLlmRefiner llmRefiner;
     private final BizRegDocumentRepository bizRegRepo;
     private final ShipperRepository shipperRepo;
+    private final NotificationCommandService notificationCommandService;
 
     @Transactional
     public void processJob(Long companyId, OcrParseJob job) {
@@ -86,6 +89,24 @@ public class BizRegOcrService {
             throw new IllegalStateException("Job 결과 직렬화 실패: " + e.getMessage(), e);
         }
         log.info("[BizReg OCR] 성공 jobId={}, shipperId={}", job.getId(), job.getVehicleId());
+
+        // 성공 알림
+        DocumentType notifDocType = doc.getType() == DocumentType.BIZ_ID_COMBINED
+                ? DocumentType.BIZ_ID_COMBINED : DocumentType.BIZ_REGISTRATION;
+        String docLabel = notifDocType == DocumentType.BIZ_ID_COMBINED ? "합본" : "사업자등록증";
+        String body = String.format("%s OCR 완료 — 상호: %s, 사업자번호: %s",
+                docLabel,
+                parsed.companyName() != null ? parsed.companyName() : "-",
+                parsed.bizNumber() != null ? parsed.bizNumber() : "-");
+        notificationCommandService.createOcr(
+                companyId, job.getRequestedByUserId(),
+                NotificationType.OCR_COMPLETE,
+                notifDocType,
+                0L,
+                job.getId(),
+                docLabel + " OCR 완료",
+                body
+        );
     }
 
     private void syncShipperMasterFromBizReg(Long companyId, Long shipperId,

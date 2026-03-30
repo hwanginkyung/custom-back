@@ -57,25 +57,18 @@ public class VehicleOcrService {
         AttemptResult base = runAttempt(imageBytes, fileName, 0, false);
         attempts.add(base);
 
-        if (shouldTryPreprocessFallback(base)) {
-            byte[] preprocessed = imagePreprocessor.preprocess(imageBytes, fileName);
-            AttemptResult preprocessedBase = runAttempt(preprocessed, fileName, 0, true);
-            attempts.add(preprocessedBase);
-
-            if (shouldTryRotation(preprocessedBase)) {
-                attempts.add(runAttempt(imagePreprocessor.rotate(preprocessed, 90), fileName, 90, true));
-                attempts.add(runAttempt(imagePreprocessor.rotate(preprocessed, 270), fileName, 270, true));
-            }
+        // 원본 OCR 실패 시 회전만 시도 (전처리 없이)
+        if (shouldTryRotation(base)) {
+            attempts.add(runAttempt(imagePreprocessor.rotate(imageBytes, 90), fileName, 90, false));
+            attempts.add(runAttempt(imagePreprocessor.rotate(imageBytes, 270), fileName, 270, false));
         }
 
         AttemptResult best = pickBest(attempts);
 
         VehicleRegistration finalResult = best.result;
 
-        if (best.preprocessedInput && best.rotation == 0) {
-            appendQualityReason(finalResult, "전처리 OCR 적용");
-        } else if (best.rotation != 0) {
-            appendQualityReason(finalResult, "전처리 회전보정 적용(" + best.rotation + "도)");
+        if (best.rotation != 0) {
+            appendQualityReason(finalResult, "회전보정 적용(" + best.rotation + "도)");
         }
         if (registrationLlmRefiner != null) {
             finalResult = registrationLlmRefiner.refineIfNeeded(
@@ -109,37 +102,21 @@ public class VehicleOcrService {
         return new AttemptResult(rotation, preprocessedInput, words, result, orientationSuspicious, rank);
     }
 
-    private boolean shouldTryPreprocessFallback(AttemptResult base) {
-        if (base == null || base.result == null) return true;
-        VehicleRegistration r = base.result;
-
-        if (Boolean.TRUE.equals(r.getNeedsRetry())) return true;
-        if (Boolean.FALSE.equals(r.getQualityGatePassed())) return true;
-        if (base.orientationSuspicious) return true;
-
-        if (isBlank(r.getVin()) || isBlank(r.getVehicleNo())) return true;
-        if (isBlank(r.getFirstRegistratedAt()) || isBlank(r.getManufactureYearMonth())) return true;
-
-        return fieldConfidence(r, "vin") < 0.90 || fieldConfidence(r, "vehicleNo") < 0.85;
-    }
-
     private boolean shouldTryRotation(AttemptResult base) {
+        if (base == null || base.result == null) return true;
         if (base.orientationSuspicious) return true;
+        if (Boolean.TRUE.equals(base.result.getNeedsRetry())) return true;
 
-        // 빈 필드가 5개 이상일 때만 회전 재시도
-        int blankCount = 0;
+        // 핵심 필드가 비어 있으면 회전 시도
         VehicleRegistration r = base.result;
+        int blankCount = 0;
         if (isBlank(r.getVin())) blankCount++;
         if (isBlank(r.getVehicleNo())) blankCount++;
         if (isBlank(r.getFirstRegistratedAt())) blankCount++;
         if (isBlank(r.getManufactureYearMonth())) blankCount++;
         if (isBlank(r.getOwnerName())) blankCount++;
         if (isBlank(r.getOwnerId())) blankCount++;
-        if (isBlank(r.getEngineType())) blankCount++;
-        if (isBlank(r.getModelName())) blankCount++;
-        if (isBlank(r.getWeight())) blankCount++;
-        if (isBlank(r.getMaxLoad())) blankCount++;
-        return blankCount >= 5;
+        return blankCount >= 3;
     }
 
     private AttemptResult pickBest(List<AttemptResult> attempts) {

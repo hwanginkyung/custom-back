@@ -43,6 +43,7 @@ public record CustomsSendRequest(
             Long shippingFee,              // 운임료 (CIF, CFR)
             Long insuranceFee,             // 보험료 (CIF)
             Long otherFee,                 // 기타금액 (CIF)
+            Integer weight,                // 중량(kg) — null이면 기존 Vehicle.weight 사용
 
             // Container 전용 — 차량 사진 S3 key (프론트에서 미리 업로드)
             @Size(max = 4, message = "차량 사진은 차량당 최대 4장까지 가능합니다.")

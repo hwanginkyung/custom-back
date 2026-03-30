@@ -321,10 +321,15 @@ public class CustomsCommandService {
                     .build();
             requestVehicleRepo.save(crv);
 
+            // 중량 업데이트: 사용자가 입력한 값이 있으면 Vehicle 엔티티도 갱신
+            if (vi.weight() != null) {
+                vehicle.patchWeight(vi.weight());
+            }
+
             if (updateVehicleShippingMethod) {
                 vehicle.updateShippingMethod(method.name());
-                vehicleRepo.save(vehicle);
             }
+            vehicleRepo.save(vehicle);
         }
     }
 

@@ -18,6 +18,7 @@ public record ShipperDetailResponse(
             String s3Key,
             String originalFilename,
             Long sizeBytes,
-            Instant uploadedAt
+            Instant uploadedAt,
+            boolean ocrCompleted
     ) {}
 }

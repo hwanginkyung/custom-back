@@ -53,29 +53,28 @@ public class DeregistrationOcrService {
     public VehicleDeregistration processBytes(byte[] imageBytes, String fileName) throws IOException {
         log.info("Processing deregistration certificate from upload: {}", fileName);
 
-        byte[] preprocessed = imagePreprocessor.preprocess(imageBytes, fileName);
-
+        // 원본 이미지로 OCR (전처리 제거 — CLOVA는 원본 컬러 이미지에서 더 정확)
         List<AttemptResult> attempts = new ArrayList<>();
-        AttemptResult base = runAttempt(preprocessed, fileName, 0);
+        AttemptResult base = runAttempt(imageBytes, fileName, 0);
         attempts.add(base);
 
         if (shouldTryRotation(base)) {
-            attempts.add(runAttempt(imagePreprocessor.rotate(preprocessed, 90), fileName, 90));
-            attempts.add(runAttempt(imagePreprocessor.rotate(preprocessed, 270), fileName, 270));
+            attempts.add(runAttempt(imagePreprocessor.rotate(imageBytes, 90), fileName, 90));
+            attempts.add(runAttempt(imagePreprocessor.rotate(imageBytes, 270), fileName, 270));
         }
 
         AttemptResult best = pickBest(attempts);
 
         // 마지막까지 실패면 180도까지 추가 확인
         if (Boolean.TRUE.equals(best.result.getNeedsRetry())) {
-            attempts.add(runAttempt(imagePreprocessor.rotate(preprocessed, 180), fileName, 180));
+            attempts.add(runAttempt(imagePreprocessor.rotate(imageBytes, 180), fileName, 180));
             best = pickBest(attempts);
         }
 
         VehicleDeregistration finalResult = best.result;
 
         if (best.rotation != 0) {
-            appendQualityReason(finalResult, "전처리 회전보정 적용(" + best.rotation + "도)");
+            appendQualityReason(finalResult, "회전보정 적용(" + best.rotation + "도)");
         }
 
         // LLM 보정

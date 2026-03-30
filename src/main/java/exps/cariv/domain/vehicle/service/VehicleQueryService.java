@@ -509,11 +509,16 @@ public class VehicleQueryService {
                 v.getShipperName(),
                 v.getOwnerType() == null ? null : v.getOwnerType().name(),
                 v.getOwnerName(),
+                v.getMileageKm(),
+                v.getDisplacement(),
+                v.getColor(),
+                v.getFirstRegistrationDate(),
                 v.getPurchaseDate(),
                 v.getPurchasePrice(),
                 v.isRefundApplied(),
                 null,  // purchaseCompanyName - 추후 구현
-                v.getLicenseDate()
+                v.getLicenseDate(),
+                v.getDeRegistrationDate()
         );
     }
 

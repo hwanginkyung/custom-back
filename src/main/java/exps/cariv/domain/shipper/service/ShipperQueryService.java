@@ -1,6 +1,7 @@
 package exps.cariv.domain.shipper.service;
 
 import exps.cariv.domain.document.entity.Document;
+import exps.cariv.domain.document.entity.DocumentStatus;
 import exps.cariv.domain.document.entity.DocumentType;
 import exps.cariv.domain.document.entity.DocumentRefType;
 import exps.cariv.domain.document.repository.DocumentRepository;
@@ -117,7 +118,9 @@ public class ShipperQueryService {
         List<ShipperDocInfo> docInfos = latestByType.values().stream()
                 .map(d -> new ShipperDocInfo(
                         d.getId(), toApiType(d.getType()), d.getS3Key(),
-                        d.getOriginalFilename(), d.getSizeBytes(), d.getUploadedAt()
+                        d.getOriginalFilename(), d.getSizeBytes(), d.getUploadedAt(),
+                        d.getStatus() == DocumentStatus.OCR_DRAFT
+                                || d.getStatus() == DocumentStatus.CONFIRMED
                 )).toList();
 
         return new ShipperDetailResponse(

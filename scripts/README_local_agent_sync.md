@@ -1,64 +1,58 @@
-# Local Agent Push Sync
+# Local Agent Push Sync (DDeal -> Customs)
 
-This repo now supports `DDeal -> broker_client` sync via push.
+Use this when NCustoms DB is local-only (office network) and EC2 cannot pull directly.
 
-## Backend endpoint
+## 1) Backend requirement (EC2)
 
-- `POST /api/clients/sync/push`
-- Header: `X-Agent-Token: <CLIENT_SYNC_AGENT_TOKEN>`
-- Body:
+`/home/ubuntu/docker-compose.yml` must include:
 
-```json
-{
-  "companyId": 1,
-  "source": "local-ddeal-agent",
-  "checkpoint": "20260410093000|00123",
-  "items": [
-    {
-      "dealCode": "00123",
-      "dealSaupgbn": "A",
-      "dealSaup": "1234567890",
-      "dealSangho": "Sample Co",
-      "dealName": "Hong",
-      "dealPost": "04530",
-      "dealJuso": "Seoul ...",
-      "dealJuso2": "Detail ...",
-      "dealTel": "02-1234-5678",
-      "dealFax": "02-1234-5679",
-      "dealTong": "TONG123",
-      "roadNmCd": "02012014",
-      "buldMngNo": "0201201400000000000",
-      "addDtTime": "20260409120000",
-      "editDtTime": "20260410101500"
-    }
-  ]
-}
+```yaml
+environment:
+  CLIENT_SYNC_AGENT_TOKEN: <strong-random-token>
 ```
 
-## Server env
-
-Set token on backend:
+Apply with build:
 
 ```bash
-CLIENT_SYNC_AGENT_TOKEN=replace-with-strong-secret
+cd /home/ubuntu
+docker compose up -d --build --force-recreate app
 ```
 
-## Agent script
+## 2) Agent files
 
-Use `scripts/local_agent_push_sync.py`.
+- Main script: `scripts/local_agent_push_sync.py`
+- Linux/mac wrapper: `scripts/run_local_agent_sync.sh`
+- Windows wrapper: `scripts/run_local_agent_sync.ps1`
+- Env template: `scripts/local_agent_sync.env.example`
 
-Install deps:
+## 3) Local PC quick start
+
+### Linux/mac
 
 ```bash
+cd scripts
+cp local_agent_sync.env.example .env.local-agent
+# edit .env.local-agent
 pip install mysql-connector-python requests
+./run_local_agent_sync.sh
 ```
 
-Required env:
+### Windows PowerShell
 
-```bash
-SYNC_API_URL=https://<your-api-host>/api/clients/sync/push
-CLIENT_SYNC_AGENT_TOKEN=<same-token-as-backend>
-SYNC_COMPANY_ID=<target-company-id>
+```powershell
+cd scripts
+Copy-Item .\local_agent_sync.env.example .\.env.local-agent
+# edit .env.local-agent
+pip install mysql-connector-python requests
+.\run_local_agent_sync.ps1
+```
+
+## 4) Required env values
+
+```dotenv
+SYNC_API_URL=http://43.203.237.154:8080/api/clients/sync/push
+CLIENT_SYNC_AGENT_TOKEN=<same-token-as-ec2>
+SYNC_COMPANY_ID=10
 LOCAL_DB_HOST=127.0.0.1
 LOCAL_DB_PORT=3306
 LOCAL_DB_NAME=ncustoms
@@ -66,11 +60,42 @@ LOCAL_DB_USER=kcba
 LOCAL_DB_PASSWORD=...
 ```
 
-Run once:
+## 5) What success looks like
 
-```bash
-python scripts/local_agent_push_sync.py
+Agent stdout example:
+
+```text
+[sync] pushed=200 total=200 server(created=40, updated=160, skipped=0) checkpoint=(..., ...)
 ```
 
-Then schedule with cron/systemd/task scheduler.
+Server log example:
 
+```text
+[ClientSync] done companyId=10, source=agent-push:local-ddeal-agent, received=..., created=..., updated=...
+```
+
+## 6) Schedule (optional)
+
+### Linux cron (every 5 minutes)
+
+```bash
+*/5 * * * * /bin/bash /path/to/scripts/run_local_agent_sync.sh >> /path/to/scripts/local-agent.log 2>&1
+```
+
+### Windows Task Scheduler
+
+- Program/script: `powershell.exe`
+- Arguments:
+
+```text
+-ExecutionPolicy Bypass -File "C:\path\to\scripts\run_local_agent_sync.ps1"
+```
+
+## 7) Push API contract
+
+- `POST /api/clients/sync/push`
+- Header: `X-Agent-Token: <CLIENT_SYNC_AGENT_TOKEN>`
+- Body fields in each item map from DDeal:
+  - `dealCode`, `dealSaupgbn`, `dealSaup`, `dealSangho`, `dealName`
+  - `dealPost`, `dealJuso`, `dealJuso2`, `dealTel`, `dealFax`, `dealTong`
+  - `roadNmCd`, `buldMngNo`, `addDtTime`, `editDtTime`

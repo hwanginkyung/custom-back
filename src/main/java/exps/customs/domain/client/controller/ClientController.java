@@ -1,14 +1,19 @@
 package exps.customs.domain.client.controller;
 
 import exps.customs.domain.client.dto.ClientResponse;
+import exps.customs.domain.client.dto.ClientSyncPushRequest;
+import exps.customs.domain.client.dto.ClientSyncResponse;
 import exps.customs.domain.client.dto.CreateClientRequest;
 import exps.customs.domain.client.dto.UpdateClientRequest;
 import exps.customs.domain.client.service.ClientService;
+import exps.customs.domain.client.service.ClientSyncService;
+import exps.customs.global.security.CustomUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,6 +25,7 @@ import java.util.List;
 public class ClientController {
 
     private final ClientService clientService;
+    private final ClientSyncService clientSyncService;
 
     @GetMapping
     @Operation(summary = "화주 목록 조회")
@@ -56,5 +62,36 @@ public class ClientController {
     public ResponseEntity<String> toggleActive(@PathVariable Long id) {
         clientService.toggleActive(id);
         return ResponseEntity.ok("ok");
+    }
+
+    @PostMapping("/sync")
+    @Operation(summary = "통관 프로그램 화주 동기화(Pull)", description = "NCustoms DDeal에서 화주를 읽어와 현재 회사 화주 마스터에 업서트합니다.")
+    public ResponseEntity<ClientSyncResponse> syncFromNcustoms(
+            @AuthenticationPrincipal CustomUserDetails me,
+            @RequestParam(defaultValue = "00") String codePrefix,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "500") Integer limit
+    ) {
+        return ResponseEntity.ok(clientSyncService.syncFromNcustoms(me.getCompanyId(), codePrefix, keyword, limit));
+    }
+
+    @PostMapping("/synchronize")
+    @Operation(summary = "통관 프로그램 화주 동기화(Pull) 별칭")
+    public ResponseEntity<ClientSyncResponse> synchronizeFromNcustoms(
+            @AuthenticationPrincipal CustomUserDetails me,
+            @RequestParam(defaultValue = "00") String codePrefix,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "500") Integer limit
+    ) {
+        return ResponseEntity.ok(clientSyncService.syncFromNcustoms(me.getCompanyId(), codePrefix, keyword, limit));
+    }
+
+    @PostMapping("/sync/push")
+    @Operation(summary = "로컬 에이전트 화주 동기화(Push)", description = "로컬 통관프로그램 에이전트가 화주 배치를 업로드합니다. X-Agent-Token 헤더가 필요합니다.")
+    public ResponseEntity<ClientSyncResponse> syncFromAgentPush(
+            @RequestHeader(name = "X-Agent-Token", required = false) String agentToken,
+            @Valid @RequestBody ClientSyncPushRequest request
+    ) {
+        return ResponseEntity.ok(clientSyncService.syncFromPush(request, agentToken));
     }
 }

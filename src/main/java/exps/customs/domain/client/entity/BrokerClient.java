@@ -20,6 +20,15 @@ public class BrokerClient extends TenantEntity {
     @Column(nullable = false)
     private String companyName;
 
+    @Column(length = 50)
+    private String externalCode;
+
+    @Column(length = 100)
+    private String customsUniqueCode;
+
+    @Column(length = 100)
+    private String identifierCode;
+
     private String representativeName;
     private String businessNumber;
     private String phoneNumber;

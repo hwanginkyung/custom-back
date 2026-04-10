@@ -62,7 +62,8 @@ public class SecurityConfig {
                     auth.dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll();
                     auth.requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
                             .requestMatchers("/", "/error", "/favicon.ico").permitAll()
-                            .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/auth/login", "/api/auth/refresh", "/api/auth/signup").permitAll();
+                            .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/auth/login", "/api/auth/refresh", "/api/auth/signup").permitAll()
+                            .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/clients/sync/push").permitAll();
                     if (allowDocs) {
                         auth.requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/swagger-resources/**", "/webjars/**", "/h2-console/**").permitAll();
                     } else {

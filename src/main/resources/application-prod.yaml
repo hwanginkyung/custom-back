@@ -62,3 +62,8 @@ ncustoms:
   export:
     create-enabled: ${NCUSTOMS_CREATE_ENABLED:false}
     lock-timeout-seconds: ${NCUSTOMS_LOCK_TIMEOUT_SECONDS:10}
+
+client:
+  sync:
+    push:
+      agent-token: ${CLIENT_SYNC_AGENT_TOKEN:}

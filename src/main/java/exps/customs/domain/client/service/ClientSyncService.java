@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import java.util.Objects;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
@@ -207,9 +208,9 @@ public class ClientSyncService {
 
     private String joinAddress(String post, String juso, String juso2) {
         String joined = String.join(" ",
-                firstNonBlank(trimToNull(post), ""),
-                firstNonBlank(trimToNull(juso), ""),
-                firstNonBlank(trimToNull(juso2), "")
+                Objects.requireNonNullElse(trimToNull(post), ""),
+                Objects.requireNonNullElse(trimToNull(juso), ""),
+                Objects.requireNonNullElse(trimToNull(juso2), "")
         ).trim();
         return joined.isBlank() ? null : joined;
     }

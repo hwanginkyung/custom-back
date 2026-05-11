@@ -16,3 +16,4 @@ build/
 scripts/.env.local-agent
 scripts/.client-sync-checkpoint.json
 scripts/.client-sync-status.json
+scripts.zip

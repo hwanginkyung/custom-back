@@ -3,6 +3,7 @@ package exps.customs.domain.brokercase.service;
 import exps.customs.domain.brokercase.dto.*;
 import exps.customs.domain.brokercase.entity.*;
 import exps.customs.domain.brokercase.repository.BrokerCaseRepository;
+import exps.customs.domain.brokercase.repository.CaseAttachmentRepository;
 import exps.customs.domain.brokercase.repository.CaseCargoRepository;
 import exps.customs.domain.client.entity.BrokerClient;
 import exps.customs.domain.client.repository.BrokerClientRepository;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Comparator;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +27,7 @@ public class CaseService {
 
     private final BrokerCaseRepository caseRepository;
     private final CaseCargoRepository cargoRepository;
+    private final CaseAttachmentRepository attachmentRepository;
     private final BrokerClientRepository clientRepository;
 
     @TenantFiltered
@@ -53,6 +56,18 @@ public class CaseService {
         BrokerCase brokerCase = caseRepository.findById(id)
                 .orElseThrow(() -> new CustomException(ErrorCode.CASE_NOT_FOUND));
         return CaseResponse.from(brokerCase);
+    }
+
+    @TenantFiltered
+    public List<CaseAttachmentResponse> getAttachments(Long caseId) {
+        // Tenant filter is applied through BrokerCase lookup.
+        caseRepository.findById(caseId)
+                .orElseThrow(() -> new CustomException(ErrorCode.CASE_NOT_FOUND));
+
+        return attachmentRepository.findAllByBrokerCaseId(caseId).stream()
+                .sorted(Comparator.comparing(CaseAttachment::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(CaseAttachmentResponse::from)
+                .toList();
     }
 
     @Transactional

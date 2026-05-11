@@ -42,9 +42,10 @@ public class BrokerConnectionController {
     @Operation(summary = "연동 승인", description = "수출자의 연동 요청을 승인합니다.")
     public ResponseEntity<ConnectionRequestResponse> approve(
             @AuthenticationPrincipal CustomUserDetails me,
-            @PathVariable Long connectionId
+            @PathVariable Long connectionId,
+            @RequestParam(required = false) Long matchedClientId
     ) {
-        return ResponseEntity.ok(service.approve(me.getCompanyId(), connectionId));
+        return ResponseEntity.ok(service.approve(me.getCompanyId(), connectionId, matchedClientId));
     }
 
     @PatchMapping("/requests/{connectionId}/reject")
@@ -54,5 +55,15 @@ public class BrokerConnectionController {
             @PathVariable Long connectionId
     ) {
         return ResponseEntity.ok(service.reject(me.getCompanyId(), connectionId));
+    }
+
+    @PatchMapping("/requests/{connectionId}/link")
+    @Operation(summary = "연동 화주 수동 연결", description = "연동 요청에 동기화된 화주를 수동으로 연결합니다.")
+    public ResponseEntity<ConnectionRequestResponse> linkClient(
+            @AuthenticationPrincipal CustomUserDetails me,
+            @PathVariable Long connectionId,
+            @RequestParam Long matchedClientId
+    ) {
+        return ResponseEntity.ok(service.linkClient(me.getCompanyId(), connectionId, matchedClientId));
     }
 }

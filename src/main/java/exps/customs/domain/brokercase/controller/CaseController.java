@@ -44,6 +44,12 @@ public class CaseController {
         return ResponseEntity.ok(caseService.getById(id));
     }
 
+    @GetMapping("/{id}/attachments")
+    @Operation(summary = "케이스 첨부파일 목록 조회")
+    public ResponseEntity<List<CaseAttachmentResponse>> getAttachments(@PathVariable Long id) {
+        return ResponseEntity.ok(caseService.getAttachments(id));
+    }
+
     @PostMapping
     @Operation(summary = "케이스 생성")
     public ResponseEntity<CaseResponse> create(@Valid @RequestBody CreateCaseRequest req) {

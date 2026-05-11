@@ -38,14 +38,14 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create
-    show-sql: true
+    show-sql: false
     properties:
       hibernate.jdbc.time_zone: UTC
-      hibernate.format_sql: true
+      hibernate.format_sql: false
     database-platform: org.hibernate.dialect.H2Dialect
   h2:
     console:
-      enabled: true
+      enabled: false
       path: /h2-console
 
 jwt:
@@ -71,3 +71,11 @@ client:
   sync:
     push:
       agent-token: ${CLIENT_SYNC_AGENT_TOKEN:}
+
+cariv:
+  sync:
+    push:
+      agent-token: ${CARIV_SYNC_AGENT_TOKEN:cariv-bridge-token-2026-0508}
+      previous-agent-token: ${CARIV_SYNC_PREVIOUS_AGENT_TOKEN:}
+      require-https: ${CARIV_SYNC_REQUIRE_HTTPS:false}
+      allowed-ips: ${CARIV_SYNC_ALLOWED_IPS:}

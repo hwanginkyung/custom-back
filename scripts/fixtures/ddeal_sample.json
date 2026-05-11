@@ -1,0 +1,38 @@
+{
+  "items": [
+    {
+      "dealCode": "00010001",
+      "dealSaupgbn": "1",
+      "dealSaup": "123-45-67890",
+      "dealSangho": "테스트수출상사",
+      "dealName": "홍길동",
+      "dealPost": "06123",
+      "dealJuso": "서울특별시 강남구 테헤란로 123",
+      "dealJuso2": "4층",
+      "dealTel": "02-1234-5678",
+      "dealFax": "02-1234-5679",
+      "dealTong": "010-1111-2222",
+      "roadNmCd": "1234567",
+      "buldMngNo": "1168010100100010000000001",
+      "addDtTime": "20260420100000",
+      "editDtTime": "20260420100500"
+    },
+    {
+      "dealCode": "00010002",
+      "dealSaupgbn": "1",
+      "dealSaup": "234-56-78901",
+      "dealSangho": "샘플무역",
+      "dealName": "김철수",
+      "dealPost": "04524",
+      "dealJuso": "서울특별시 중구 세종대로 110",
+      "dealJuso2": "12층",
+      "dealTel": "02-2222-3333",
+      "dealFax": "02-2222-3334",
+      "dealTong": "010-2222-3333",
+      "roadNmCd": "7654321",
+      "buldMngNo": "1114010100101100000000001",
+      "addDtTime": "20260420110000",
+      "editDtTime": "20260420111000"
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import exps.customs.domain.broker.entity.ConnectionStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface BrokerConnectionRepository extends JpaRepository<BrokerConnection, Long> {
 
@@ -17,4 +18,13 @@ public interface BrokerConnectionRepository extends JpaRepository<BrokerConnecti
 
     /** 대기 중 요청 수 (알림 뱃지용) */
     long countByBrokerCompanyIdAndStatus(Long brokerCompanyId, ConnectionStatus status);
+
+    Optional<BrokerConnection> findByExporterCompanyIdAndBrokerCompanyId(Long exporterCompanyId, Long brokerCompanyId);
+
+    List<BrokerConnection> findAllByExporterCompanyIdOrderByCreatedAtDesc(Long exporterCompanyId);
+
+    List<BrokerConnection> findAllByExporterCompanyIdAndBrokerCompanyIdOrderByCreatedAtDesc(
+            Long exporterCompanyId,
+            Long brokerCompanyId
+    );
 }

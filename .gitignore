@@ -11,3 +11,8 @@ build/
 
 # Logs
 *.log
+
+# Local agent secrets/state
+scripts/.env.local-agent
+scripts/.client-sync-checkpoint.json
+scripts/.client-sync-status.json

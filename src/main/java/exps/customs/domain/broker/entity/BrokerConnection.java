@@ -34,6 +34,9 @@ public class BrokerConnection extends BaseEntity {
     @Column(name = "exporter_company_name", length = 100)
     private String exporterCompanyName;
 
+    @Column(name = "exporter_business_number", length = 30)
+    private String exporterBusinessNumber;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default
@@ -42,12 +45,54 @@ public class BrokerConnection extends BaseEntity {
     @Column
     private Instant approvedAt;
 
+    @Column(name = "linked_client_id")
+    private Long linkedClientId;
+
+    @Column(name = "linked_at")
+    private Instant linkedAt;
+
     public void approve() {
+        approve(null);
+    }
+
+    public void approve(Long matchedClientId) {
         this.status = ConnectionStatus.APPROVED;
         this.approvedAt = Instant.now();
+        this.linkedClientId = matchedClientId;
+        this.linkedAt = matchedClientId == null ? null : Instant.now();
     }
 
     public void reject() {
         this.status = ConnectionStatus.REJECTED;
+        this.approvedAt = null;
+        this.linkedClientId = null;
+        this.linkedAt = null;
+    }
+
+    public void request() {
+        this.status = ConnectionStatus.PENDING;
+        this.approvedAt = null;
+        this.linkedClientId = null;
+        this.linkedAt = null;
+    }
+
+    public void updateExporterProfile(String companyName, String businessNumber) {
+        if (companyName != null && !companyName.isBlank()) {
+            this.exporterCompanyName = companyName.trim();
+        }
+        if (businessNumber != null && !businessNumber.isBlank()) {
+            this.exporterBusinessNumber = businessNumber.trim();
+        }
+    }
+
+    public void updateBrokerCompanyName(String brokerCompanyName) {
+        if (brokerCompanyName != null && !brokerCompanyName.isBlank()) {
+            this.brokerCompanyName = brokerCompanyName.trim();
+        }
+    }
+
+    public void linkClient(Long clientId) {
+        this.linkedClientId = clientId;
+        this.linkedAt = clientId == null ? null : Instant.now();
     }
 }

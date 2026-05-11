@@ -2,6 +2,7 @@ package exps.customs.domain.client.service;
 
 import exps.customs.domain.client.dto.ClientSyncPushItem;
 import exps.customs.domain.client.dto.ClientSyncPushRequest;
+import exps.customs.domain.client.dto.ClientSyncConfigResponse;
 import exps.customs.domain.client.dto.ClientSyncResponse;
 import exps.customs.domain.client.entity.BrokerClient;
 import exps.customs.domain.client.repository.BrokerClientRepository;
@@ -34,6 +35,16 @@ public class ClientSyncService {
 
     @Value("${client.sync.push.agent-token:}")
     private String pushAgentToken;
+
+    public ClientSyncConfigResponse getSyncConfig() {
+        boolean pullEnabled = ncustomsExportServiceProvider.getIfAvailable() != null;
+        boolean agentPushEnabled = trimToNull(pushAgentToken) != null;
+        return ClientSyncConfigResponse.builder()
+                .ncustomsPullEnabled(pullEnabled)
+                .agentPushEnabled(agentPushEnabled)
+                .recommendedMode(pullEnabled ? "PULL" : "AGENT_PUSH")
+                .build();
+    }
 
     @Transactional
     public ClientSyncResponse syncFromNcustoms(Long companyId, String codePrefix, String keyword, Integer limit) {
@@ -241,4 +252,3 @@ public class ClientSyncService {
         return true;
     }
 }
-

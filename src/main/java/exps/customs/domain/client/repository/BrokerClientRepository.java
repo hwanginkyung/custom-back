@@ -9,5 +9,8 @@ import java.util.Optional;
 public interface BrokerClientRepository extends JpaRepository<BrokerClient, Long> {
     List<BrokerClient> findAllByCompanyIdOrderByCompanyNameAsc(Long companyId);
     List<BrokerClient> findAllByCompanyIdAndActiveTrue(Long companyId);
+    Optional<BrokerClient> findByIdAndCompanyId(Long id, Long companyId);
     Optional<BrokerClient> findByCompanyIdAndExternalCode(Long companyId, String externalCode);
+    Optional<BrokerClient> findByCompanyIdAndBusinessNumber(Long companyId, String businessNumber);
+    Optional<BrokerClient> findByCompanyIdAndCompanyName(Long companyId, String companyName);
 }

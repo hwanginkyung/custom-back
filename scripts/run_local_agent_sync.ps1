@@ -1,5 +1,7 @@
 param(
-  [string]$EnvFile = "$(Join-Path $PSScriptRoot '.env.local-agent')"
+  [string]$EnvFile = "$(Join-Path $PSScriptRoot '.env.local-agent')",
+  [Parameter(ValueFromRemainingArguments = $true)]
+  [string[]]$AgentArgs
 )
 
 if (-not (Test-Path $EnvFile)) {
@@ -24,4 +26,4 @@ if (-not $python) {
   exit 1
 }
 
-python (Join-Path $PSScriptRoot 'local_agent_push_sync.py')
+python (Join-Path $PSScriptRoot 'local_agent_push_sync.py') @AgentArgs

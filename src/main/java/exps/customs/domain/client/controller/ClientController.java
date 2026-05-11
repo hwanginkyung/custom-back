@@ -1,6 +1,7 @@
 package exps.customs.domain.client.controller;
 
 import exps.customs.domain.client.dto.ClientResponse;
+import exps.customs.domain.client.dto.ClientSyncConfigResponse;
 import exps.customs.domain.client.dto.ClientSyncPushRequest;
 import exps.customs.domain.client.dto.ClientSyncResponse;
 import exps.customs.domain.client.dto.CreateClientRequest;
@@ -37,6 +38,12 @@ public class ClientController {
     @Operation(summary = "활성 화주 목록 조회")
     public ResponseEntity<List<ClientResponse>> getActiveClients() {
         return ResponseEntity.ok(clientService.getActiveClients());
+    }
+
+    @GetMapping("/sync/config")
+    @Operation(summary = "화주 동기화 모드 설정 조회", description = "서버 Pull 가능 여부와 로컬 에이전트 Push 설정 여부를 조회합니다.")
+    public ResponseEntity<ClientSyncConfigResponse> getSyncConfig() {
+        return ResponseEntity.ok(clientSyncService.getSyncConfig());
     }
 
     @GetMapping("/{id}")

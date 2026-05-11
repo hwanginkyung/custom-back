@@ -2,14 +2,20 @@ package exps.customs.domain.brokercase.controller;
 
 import exps.customs.domain.brokercase.dto.*;
 import exps.customs.domain.brokercase.entity.CaseStatus;
+import exps.customs.domain.brokercase.service.CaseAttachmentFileService;
 import exps.customs.domain.brokercase.service.CaseService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @RestController
@@ -19,6 +25,7 @@ import java.util.List;
 public class CaseController {
 
     private final CaseService caseService;
+    private final CaseAttachmentFileService attachmentFileService;
 
     @GetMapping
     @Operation(summary = "케이스 목록 조회")
@@ -50,6 +57,26 @@ public class CaseController {
         return ResponseEntity.ok(caseService.getAttachments(id));
     }
 
+    @GetMapping("/{caseId}/attachments/{attachmentId}/view")
+    @Operation(summary = "케이스 첨부파일 미리보기")
+    public ResponseEntity<ByteArrayResource> viewAttachment(
+            @PathVariable Long caseId,
+            @PathVariable Long attachmentId
+    ) {
+        CaseAttachmentFileResponse file = attachmentFileService.loadAttachment(caseId, attachmentId);
+        return fileResponse(file, true);
+    }
+
+    @GetMapping("/{caseId}/attachments/{attachmentId}/download")
+    @Operation(summary = "케이스 첨부파일 다운로드")
+    public ResponseEntity<ByteArrayResource> downloadAttachment(
+            @PathVariable Long caseId,
+            @PathVariable Long attachmentId
+    ) {
+        CaseAttachmentFileResponse file = attachmentFileService.loadAttachment(caseId, attachmentId);
+        return fileResponse(file, false);
+    }
+
     @PostMapping
     @Operation(summary = "케이스 생성")
     public ResponseEntity<CaseResponse> create(@Valid @RequestBody CreateCaseRequest req) {
@@ -73,5 +100,23 @@ public class CaseController {
     public ResponseEntity<String> removeCargo(@PathVariable Long caseId, @PathVariable Long cargoId) {
         caseService.removeCargo(caseId, cargoId);
         return ResponseEntity.ok("ok");
+    }
+
+    private ResponseEntity<ByteArrayResource> fileResponse(CaseAttachmentFileResponse file, boolean inline) {
+        MediaType mediaType;
+        try {
+            mediaType = MediaType.parseMediaType(file.getContentType());
+        } catch (Exception e) {
+            mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        }
+
+        ContentDisposition disposition = (inline ? ContentDisposition.inline() : ContentDisposition.attachment())
+                .filename(file.getFileName(), StandardCharsets.UTF_8)
+                .build();
+
+        return ResponseEntity.ok()
+                .contentType(mediaType)
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .body(new ByteArrayResource(file.getBytes()));
     }
 }

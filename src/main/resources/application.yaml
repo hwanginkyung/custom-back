@@ -79,3 +79,14 @@ cariv:
       previous-agent-token: ${CARIV_SYNC_PREVIOUS_AGENT_TOKEN:}
       require-https: ${CARIV_SYNC_REQUIRE_HTTPS:false}
       allowed-ips: ${CARIV_SYNC_ALLOWED_IPS:}
+
+cloud:
+  aws:
+    credentials:
+      access-key: ${AWS_ACCESS_KEY:}
+      secret-key: ${AWS_SECRET_KEY:}
+    region:
+      static: ${AWS_REGION:ap-northeast-2}
+    s3:
+      bucket: ${AWS_S3_BUCKET:cariv-export}
+      download-timeout-ms: ${AWS_S3_DOWNLOAD_TIMEOUT_MS:10000}

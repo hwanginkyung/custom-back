@@ -50,6 +50,11 @@ dependencies {
 	// MySQL
 	implementation 'mysql:mysql-connector-java:8.0.33'
 
+	// AWS S3
+	implementation 'software.amazon.awssdk:s3:2.31.41'
+	implementation 'software.amazon.awssdk:auth:2.31.41'
+	implementation 'software.amazon.awssdk:url-connection-client:2.31.41'
+
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

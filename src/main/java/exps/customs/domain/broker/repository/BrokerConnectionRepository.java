@@ -27,4 +27,6 @@ public interface BrokerConnectionRepository extends JpaRepository<BrokerConnecti
             Long exporterCompanyId,
             Long brokerCompanyId
     );
+
+    Optional<BrokerConnection> findByExporterCompanyIdAndStatus(Long exporterCompanyId, ConnectionStatus status);
 }

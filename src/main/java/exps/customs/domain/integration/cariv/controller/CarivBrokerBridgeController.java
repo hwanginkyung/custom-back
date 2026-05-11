@@ -10,7 +10,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -49,5 +51,14 @@ public class CarivBrokerBridgeController {
     ) {
         carivCaseSyncService.assertPushAuthorized(httpRequest, agentToken);
         return ResponseEntity.ok(carivBrokerBridgeService.requestConnection(request));
+    }
+
+    @Operation(summary = "관세사 연동 해제 (cariv 측 요청)")
+    @DeleteMapping("/connection-requests/{clientId}")
+    public ResponseEntity<Void> disconnectConnection(
+            @PathVariable Long clientId
+    ) {
+        carivBrokerBridgeService.disconnectConnection(clientId);
+        return ResponseEntity.noContent().build();
     }
 }

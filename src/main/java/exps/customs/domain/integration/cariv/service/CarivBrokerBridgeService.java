@@ -171,4 +171,13 @@ public class CarivBrokerBridgeService {
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
     }
+
+    @Transactional
+    public void disconnectConnection(Long clientId) {
+        // clientId(=exporterCompanyId)로 APPROVED 상태인 연동을 찾아 DISCONNECTED로 변경
+        BrokerConnection connection = connectionRepository
+                .findByExporterCompanyIdAndStatus(clientId, ConnectionStatus.APPROVED)
+                .orElseThrow(() -> new RuntimeException("연동된 관계를 찾을 수 없습니다: clientId=" + clientId));
+        connection.disconnect();
+    }
 }

@@ -91,6 +91,13 @@ public class BrokerConnection extends BaseEntity {
         }
     }
 
+    public void disconnect() {
+        this.status = ConnectionStatus.DISCONNECTED;
+        this.approvedAt = null;
+        this.linkedClientId = null;
+        this.linkedAt = null;
+    }
+
     public void linkClient(Long clientId) {
         this.linkedClientId = clientId;
         this.linkedAt = clientId == null ? null : Instant.now();

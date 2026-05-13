@@ -1,0 +1,46 @@
+# 시작 단계는 false 유지 (실수 생성 방지)
+enabled = false
+
+aws_region   = "ap-northeast-2"
+project_name = "cariv-customs"
+env_name     = "prod"
+
+# 아래 값은 실제 AWS 리소스 ID로 변경 필요
+vpc_id           = "vpc-xxxxxxxx"
+public_subnet_id = "subnet-xxxxxxxx"
+ami_id           = "ami-xxxxxxxx"
+key_pair_name    = "your-keypair-name"
+instance_type    = "t3.small"
+
+app_port   = 8080
+enable_eip = false
+root_volume_size = 30
+root_volume_encrypted = true
+
+# true면 Terraform이 SG를 생성/관리
+manage_security_group = true
+
+# false일 때만 사용
+# security_group_ids = ["sg-xxxxxxxx", "sg-yyyyyyyy"]
+
+ingress_cidrs_ssh = ["YOUR.IP.ADDR.ESS/32"]
+ingress_cidrs_app = ["0.0.0.0/0"]
+extra_ingress_tcp_ports = [80, 443]
+
+enable_cloudwatch_alarms = true
+
+# SNS로 알림 보낼 때만 사용 (없으면 콘솔 알람만 생성)
+# alarm_actions = ["arn:aws:sns:ap-northeast-2:123456789012:ops-alerts"]
+# ok_actions    = ["arn:aws:sns:ap-northeast-2:123456789012:ops-alerts"]
+
+# 기본 임계치
+cpu_high_threshold_percent              = 80
+cpu_high_evaluation_periods             = 2
+status_check_failed_threshold           = 1
+status_check_failed_evaluation_periods  = 2
+network_out_high_threshold_bytes        = 500000000
+network_out_high_evaluation_periods     = 2
+
+tags = {
+  Owner = "ops"
+}

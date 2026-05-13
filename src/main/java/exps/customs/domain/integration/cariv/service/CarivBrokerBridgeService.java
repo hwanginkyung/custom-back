@@ -12,6 +12,7 @@ import exps.customs.domain.login.entity.User;
 import exps.customs.domain.login.entity.enumType.Role;
 import exps.customs.domain.login.repository.CompanyRepository;
 import exps.customs.domain.login.repository.UserRepository;
+import exps.customs.domain.notification.service.BrokerNotificationService;
 import exps.customs.global.exception.CustomException;
 import exps.customs.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class CarivBrokerBridgeService {
     private final UserRepository userRepository;
     private final BrokerConnectionRepository connectionRepository;
     private final BrokerClientRepository clientRepository;
+    private final BrokerNotificationService notificationService;
 
     @Transactional(readOnly = true)
     public List<CarivBrokerOptionResponse> listBrokerOptions(Long exporterCompanyId) {
@@ -102,6 +104,7 @@ public class CarivBrokerBridgeService {
                 .findFirst()
                 .orElse(null);
 
+        boolean shouldNotify = false;
         if (connection == null) {
             connection = connectionRepository.save(BrokerConnection.builder()
                     .exporterCompanyId(exporterCompanyId)
@@ -111,6 +114,7 @@ public class CarivBrokerBridgeService {
                     .brokerCompanyName(brokerCompany.getCompanyName())
                     .status(ConnectionStatus.PENDING)
                     .build());
+            shouldNotify = true;
         } else {
             connection.updateExporterProfile(
                     request.getExporterCompanyName(),
@@ -118,7 +122,12 @@ public class CarivBrokerBridgeService {
             );
             if (connection.getStatus() != ConnectionStatus.APPROVED) {
                 connection.request();
+                shouldNotify = true;
             }
+        }
+
+        if (shouldNotify) {
+            notificationService.notifyConnectionRequested(connection);
         }
 
         return CarivBrokerOptionResponse.ofConnection(

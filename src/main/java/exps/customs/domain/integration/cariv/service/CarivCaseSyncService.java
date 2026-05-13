@@ -19,6 +19,7 @@ import exps.customs.domain.integration.cariv.dto.CarivSyncCargoRequest;
 import exps.customs.domain.integration.cariv.dto.CarivSyncCaseRequest;
 import exps.customs.domain.integration.cariv.dto.CarivSyncCaseResponse;
 import exps.customs.domain.login.repository.CompanyRepository;
+import exps.customs.domain.notification.service.BrokerNotificationService;
 import exps.customs.global.exception.CustomException;
 import exps.customs.global.exception.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
@@ -54,6 +55,7 @@ public class CarivCaseSyncService {
     private final BrokerClientRepository clientRepository;
     private final BrokerCaseRepository caseRepository;
     private final CompanyRepository companyRepository;
+    private final BrokerNotificationService notificationService;
 
     @Value("${cariv.sync.push.agent-token:}")
     private String pushAgentToken;
@@ -183,7 +185,15 @@ public class CarivCaseSyncService {
             req.setConnectionStatus(ConnectionStatus.PENDING);
         }
 
-        return syncCase(brokerCompanyId, req);
+        CarivSyncCaseResponse response = syncCase(brokerCompanyId, req);
+        notificationService.notifyCasePushed(
+                brokerCompanyId,
+                response.getCaseId(),
+                response.getCaseNumber(),
+                response.getClientCompanyName(),
+                response.isCreated()
+        );
+        return response;
     }
 
     public void assertPushAuthorized(HttpServletRequest request, String providedToken) {

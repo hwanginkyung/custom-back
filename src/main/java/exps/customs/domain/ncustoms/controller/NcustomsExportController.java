@@ -4,6 +4,7 @@ import exps.customs.domain.ncustoms.dto.CreateNcustomsExportRequest;
 import exps.customs.domain.ncustoms.dto.CreateNcustomsContainerTempSaveRequest;
 import exps.customs.domain.ncustoms.dto.NcustomsContainerTempSaveResponse;
 import exps.customs.domain.ncustoms.dto.NcustomsExportResponse;
+import exps.customs.domain.ncustoms.dto.NcustomsProfileOptionsResponse;
 import exps.customs.domain.ncustoms.dto.NcustomsShipperResponse;
 import exps.customs.domain.ncustoms.service.NcustomsExportService;
 import exps.customs.global.security.CustomUserDetails;
@@ -26,6 +27,12 @@ import java.util.List;
 public class NcustomsExportController {
 
     private final NcustomsExportService ncustomsExportService;
+
+    @GetMapping("/profile-options")
+    @Operation(summary = "Load NCustoms profile options", description = "Load user codes and writer users for my page profile selection")
+    public ResponseEntity<NcustomsProfileOptionsResponse> getProfileOptions() {
+        return ResponseEntity.ok(ncustomsExportService.getProfileOptions());
+    }
 
     @PostMapping("/exports")
     @Operation(summary = "Create NCustoms export", description = "Generate pno/dno and insert into expo1/expodamdang")

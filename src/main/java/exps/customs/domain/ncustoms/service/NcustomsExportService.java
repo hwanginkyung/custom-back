@@ -6,10 +6,10 @@ import exps.customs.domain.ncustoms.dto.CreateNcustomsContainerTempSaveRequest;
 import exps.customs.domain.ncustoms.dto.CreateNcustomsExportRequest;
 import exps.customs.domain.ncustoms.dto.NcustomsContainerTempSaveResponse;
 import exps.customs.domain.ncustoms.dto.NcustomsExportResponse;
+import exps.customs.domain.ncustoms.dto.NcustomsProfileOptionsResponse;
 import exps.customs.domain.ncustoms.dto.NcustomsShipperResponse;
 import exps.customs.global.exception.CustomException;
 import exps.customs.global.exception.ErrorCode;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,7 +31,6 @@ import java.util.regex.Pattern;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "ncustoms.datasource", name = "enabled", havingValue = "true")
 public class NcustomsExportService {
 
@@ -49,6 +48,67 @@ public class NcustomsExportService {
 
     @Value("${ncustoms.export.create-enabled:false}")
     private boolean createEnabled;
+
+    public NcustomsExportService(
+            @Qualifier("ncustomsDataSource") DataSource ncustomsDataSource,
+            UserRepository userRepository
+    ) {
+        this.ncustomsDataSource = ncustomsDataSource;
+        this.userRepository = userRepository;
+    }
+
+    public NcustomsProfileOptionsResponse getProfileOptions() {
+        List<NcustomsProfileOptionsResponse.UserCodeOption> userCodes = new ArrayList<>();
+        List<NcustomsProfileOptionsResponse.WriterOption> writers = new ArrayList<>();
+
+        try (Connection conn = ncustomsDataSource.getConnection()) {
+            conn.setAutoCommit(true);
+            executeUpdate(conn, "SET NAMES euckr");
+
+            try (PreparedStatement ps = conn.prepareStatement("""
+                    SELECT Userno_no, Userno_name
+                    FROM userno
+                    WHERE Userno_no IS NOT NULL
+                      AND TRIM(Userno_no) <> ''
+                    ORDER BY LENGTH(Userno_no), Userno_no
+                    """);
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String userCode = defaultIfBlank(rs.getString("Userno_no"), "").trim();
+                    if (!userCode.isEmpty()) {
+                        userCodes.add(new NcustomsProfileOptionsResponse.UserCodeOption(
+                                userCode,
+                                defaultIfBlank(rs.getString("Userno_name"), userCode).trim()
+                        ));
+                    }
+                }
+            }
+
+            try (PreparedStatement ps = conn.prepareStatement("""
+                    SELECT USER_ID, USER_NAME
+                    FROM tbl_user
+                    WHERE USER_ID IS NOT NULL
+                      AND TRIM(USER_ID) <> ''
+                      AND COALESCE(USER_AUTH, 'Y') <> 'N'
+                    ORDER BY USER_NAME, USER_ID
+                    """);
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String writerId = defaultIfBlank(rs.getString("USER_ID"), "").trim();
+                    if (!writerId.isEmpty()) {
+                        writers.add(new NcustomsProfileOptionsResponse.WriterOption(
+                                writerId,
+                                defaultIfBlank(rs.getString("USER_NAME"), writerId).trim()
+                        ));
+                    }
+                }
+            }
+            return new NcustomsProfileOptionsResponse(userCodes, writers);
+        } catch (Exception e) {
+            log.error("[NCustoms] failed to load profile options", e);
+            throw new CustomException(ErrorCode.INTERNAL_SERVER_ERROR, "failed to load ncustoms profile options");
+        }
+    }
 
     public List<NcustomsShipperResponse> getShippers(String codePrefix, String keyword, Integer limit) {
         String prefix = (codePrefix == null || codePrefix.isBlank()) ? "00" : codePrefix.trim();

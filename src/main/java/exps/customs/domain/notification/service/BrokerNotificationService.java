@@ -88,6 +88,34 @@ public class BrokerNotificationService {
                 .build());
     }
 
+    @Transactional
+    public void notifyNcustomsTempSaveResult(
+            Long companyId,
+            Long caseId,
+            String caseNumber,
+            boolean success,
+            String errorMessage
+    ) {
+        if (companyId == null || companyId <= 0L) {
+            return;
+        }
+
+        String caseLabel = firstNonBlank(caseNumber, caseId == null ? "케이스" : "케이스 #" + caseId);
+        String message = success
+                ? caseLabel + " 통관프로그램 임시저장이 완료되었습니다."
+                : caseLabel + " 통관프로그램 임시저장에 실패했습니다."
+                + (firstNonBlank(errorMessage) == null ? "" : " (" + errorMessage + ")");
+
+        notificationRepository.save(BrokerNotification.builder()
+                .companyId(companyId)
+                .type(BrokerNotificationType.NCUSTOMS_TEMP_SAVE)
+                .title(success ? "통관 임시저장 완료" : "통관 임시저장 실패")
+                .message(message)
+                .linkPath(caseId == null ? "/cases" : "/cases/" + caseId)
+                .sourceId(caseId)
+                .build());
+    }
+
     private String firstNonBlank(String... values) {
         for (String value : values) {
             if (value == null) {

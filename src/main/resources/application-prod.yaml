@@ -63,6 +63,8 @@ jwt:
 ncustoms:
   api:
     permit-all: ${NCUSTOMS_API_PERMIT_ALL:false}
+  temp-save:
+    agent-token: ${NCUSTOMS_TEMP_SAVE_AGENT_TOKEN:${CLIENT_SYNC_AGENT_TOKEN:}}
   datasource:
     enabled: ${NCUSTOMS_DB_ENABLED:false}
     url: ${NCUSTOMS_DB_URL:jdbc:mysql://192.168.0.46:53306/ncustoms?useUnicode=true&characterEncoding=EUC-KR&serverTimezone=Asia/Seoul&useSSL=false&allowPublicKeyRetrieval=true}

@@ -23,6 +23,10 @@ docker compose up -d --build --force-recreate app
 - Main script: `scripts/local_agent_push_sync.py`
 - Linux/mac wrapper: `scripts/run_local_agent_sync.sh`
 - Windows wrapper: `scripts/run_local_agent_sync.ps1`
+- Temp-save worker: `scripts/local_ncustoms_temp_save_worker.py`
+- Temp-save wrappers:
+  - `scripts/run_local_ncustoms_temp_save_worker.sh`
+  - `scripts/run_local_ncustoms_temp_save_worker.ps1`
 - Env template: `scripts/local_agent_sync.env.example`
 - Mock fixture sample: `scripts/fixtures/ddeal_sample.json`
 
@@ -50,6 +54,18 @@ pip install mysql-connector-python requests
 .\run_local_agent_sync.ps1 -EnvFile .\.env.local-agent
 ```
 
+### Temp-save worker (Windows)
+
+```powershell
+chcp 65001
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+cd scripts
+Copy-Item .\local_agent_sync.env.example .\.env.local-agent
+# edit .env.local-agent (TEMP_SAVE_* 포함)
+pip install mysql-connector-python requests
+.\run_local_ncustoms_temp_save_worker.ps1 -EnvFile .\.env.local-agent --mode daemon
+```
+
 ## 4) Required env values
 
 See `local_agent_sync.env.example` for full list.
@@ -62,6 +78,20 @@ CLIENT_SYNC_AGENT_TOKEN=<same-token-as-ec2>
 SYNC_COMPANY_ID=10
 LOCAL_DB_HOST=127.0.0.1
 LOCAL_DB_PORT=3306
+LOCAL_DB_NAME=ncustoms
+LOCAL_DB_USER=kcba
+LOCAL_DB_PASSWORD=...
+LOCAL_DB_CHARSET=euckr
+```
+
+Temp-save worker minimum values:
+
+```dotenv
+TEMP_SAVE_API_BASE_URL=http://43.203.237.154:8080/api/ncustoms/temp-save/jobs
+NCUSTOMS_TEMP_SAVE_AGENT_TOKEN=<same-token-as-ec2>
+TEMP_SAVE_COMPANY_ID=10
+LOCAL_DB_HOST=192.168.0.46
+LOCAL_DB_PORT=53306
 LOCAL_DB_NAME=ncustoms
 LOCAL_DB_USER=kcba
 LOCAL_DB_PASSWORD=...
@@ -197,3 +227,16 @@ Example status:
   - `dealCode`, `dealSaupgbn`, `dealSaup`, `dealSangho`, `dealName`
   - `dealPost`, `dealJuso`, `dealJuso2`, `dealTel`, `dealFax`, `dealTong`
   - `roadNmCd`, `buldMngNo`, `addDtTime`, `editDtTime`
+
+## 11) Temp-save worker API contract
+
+- Claim:
+  - `POST /api/ncustoms/temp-save/jobs/claim`
+  - Header: `X-Agent-Token: <NCUSTOMS_TEMP_SAVE_AGENT_TOKEN>`
+  - Body: `{"companyId":10,"limit":1,"workerId":"..."}`
+- Complete:
+  - `POST /api/ncustoms/temp-save/jobs/{jobId}/complete`
+  - Header: `X-Agent-Token: <NCUSTOMS_TEMP_SAVE_AGENT_TOKEN>`
+  - Body:
+    - success: `{"success":true,"result":{"expoKey":"...","expoJechlNo":"..."}}`
+    - failure: `{"success":false,"errorMessage":"..."}`

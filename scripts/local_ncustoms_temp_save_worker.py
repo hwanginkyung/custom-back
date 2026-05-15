@@ -159,6 +159,13 @@ def trim(value: Any, default: str = "") -> str:
     return text if text else default
 
 
+def normalize_deal_code(raw: Any) -> str:
+    code = trim(raw, "")
+    if code.isdigit() and len(code) <= 4:
+        return code.zfill(4)
+    return code
+
+
 def decimal_or(value: Any, default: Decimal) -> Decimal:
     if value is None or (isinstance(value, str) and not value.strip()):
         return default
@@ -203,14 +210,22 @@ def query_required_string(cur, sql: str, params: Tuple = ()) -> str:
 
 
 def resolve_deal_master(cur, deal_code: str, fallback_sangho: str, fallback_tong: str, fallback_saup: str) -> Tuple[str, str, str]:
-    code = trim(deal_code, "")
-    if not code:
+    raw_code = trim(deal_code, "")
+    if not raw_code:
         return trim(fallback_sangho, ""), trim(fallback_tong, ""), trim(fallback_saup, "")
-    row = query_one(
-        cur,
-        "SELECT Deal_sangho, Deal_tong, Deal_saup FROM DDeal WHERE Deal_code=%s",
-        (code,),
-    )
+    candidates = [raw_code]
+    normalized = normalize_deal_code(raw_code)
+    if normalized and normalized not in candidates:
+        candidates.append(normalized)
+    row = None
+    for code in candidates:
+        row = query_one(
+            cur,
+            "SELECT Deal_sangho, Deal_tong, Deal_saup FROM DDeal WHERE Deal_code=%s",
+            (code,),
+        )
+        if row:
+            break
     if not row:
         return trim(fallback_sangho, ""), trim(fallback_tong, ""), trim(fallback_saup, "")
     return trim(row[0], trim(fallback_sangho, "")), trim(row[1], trim(fallback_tong, "")), trim(row[2], trim(fallback_saup, ""))
@@ -229,18 +244,26 @@ def resolve_deal_master_detail(cur, deal_code: str, fallback: Optional[Dict[str,
         "buld_mng_no": trim(base.get("buld_mng_no"), ""),
         "name": trim(base.get("name"), ""),
     }
-    code = trim(deal_code, "")
-    if not code:
+    raw_code = trim(deal_code, "")
+    if not raw_code:
         return result
-    row = query_one(
-        cur,
-        """
-        SELECT Deal_sangho, Deal_tong, Deal_saup, Deal_post, deal_juso, Deal_juso2, ROAD_NM_CD, BULD_MNG_NO, Deal_name
-        FROM DDeal
-        WHERE Deal_code=%s
-        """,
-        (code,),
-    )
+    candidates = [raw_code]
+    normalized = normalize_deal_code(raw_code)
+    if normalized and normalized not in candidates:
+        candidates.append(normalized)
+    row = None
+    for code in candidates:
+        row = query_one(
+            cur,
+            """
+            SELECT Deal_sangho, Deal_tong, Deal_saup, Deal_post, deal_juso, Deal_juso2, ROAD_NM_CD, BULD_MNG_NO, Deal_name
+            FROM DDeal
+            WHERE Deal_code=%s
+            """,
+            (code,),
+        )
+        if row:
+            break
     if not row:
         return result
     return {
@@ -257,10 +280,18 @@ def resolve_deal_master_detail(cur, deal_code: str, fallback: Optional[Dict[str,
 
 
 def resolve_gonggub_sangho(cur, gonggub_code: str, fallback_sangho: str) -> str:
-    code = trim(gonggub_code, "")
-    if not code:
+    raw_code = trim(gonggub_code, "")
+    if not raw_code:
         return trim(fallback_sangho, "")
-    row = query_one(cur, "SELECT Gonggub_sangho FROM Dgonggub WHERE Gonggub_code=%s", (code,))
+    candidates = [raw_code]
+    normalized = normalize_deal_code(raw_code)
+    if normalized and normalized not in candidates:
+        candidates.append(normalized)
+    row = None
+    for code in candidates:
+        row = query_one(cur, "SELECT Gonggub_sangho FROM Dgonggub WHERE Gonggub_code=%s", (code,))
+        if row:
+            break
     if not row:
         return trim(fallback_sangho, "")
     return trim(row[0], trim(fallback_sangho, ""))

@@ -216,6 +216,46 @@ def resolve_deal_master(cur, deal_code: str, fallback_sangho: str, fallback_tong
     return trim(row[0], trim(fallback_sangho, "")), trim(row[1], trim(fallback_tong, "")), trim(row[2], trim(fallback_saup, ""))
 
 
+def resolve_deal_master_detail(cur, deal_code: str, fallback: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    base = fallback or {}
+    result = {
+        "sangho": trim(base.get("sangho"), ""),
+        "tong": trim(base.get("tong"), ""),
+        "saup": trim(base.get("saup"), ""),
+        "post": trim(base.get("post"), ""),
+        "juso": trim(base.get("juso"), ""),
+        "juso2": trim(base.get("juso2"), ""),
+        "road_nm_cd": trim(base.get("road_nm_cd"), ""),
+        "buld_mng_no": trim(base.get("buld_mng_no"), ""),
+        "name": trim(base.get("name"), ""),
+    }
+    code = trim(deal_code, "")
+    if not code:
+        return result
+    row = query_one(
+        cur,
+        """
+        SELECT Deal_sangho, Deal_tong, Deal_saup, Deal_post, deal_juso, Deal_juso2, ROAD_NM_CD, BULD_MNG_NO, Deal_name
+        FROM DDeal
+        WHERE Deal_code=%s
+        """,
+        (code,),
+    )
+    if not row:
+        return result
+    return {
+        "sangho": trim(row[0], result["sangho"]),
+        "tong": trim(row[1], result["tong"]),
+        "saup": trim(row[2], result["saup"]),
+        "post": trim(row[3], result["post"]),
+        "juso": trim(row[4], result["juso"]),
+        "juso2": trim(row[5], result["juso2"]),
+        "road_nm_cd": trim(row[6], result["road_nm_cd"]),
+        "buld_mng_no": trim(row[7], result["buld_mng_no"]),
+        "name": trim(row[8], result["name"]),
+    }
+
+
 def resolve_gonggub_sangho(cur, gonggub_code: str, fallback_sangho: str) -> str:
     code = trim(gonggub_code, "")
     if not code:
@@ -325,21 +365,47 @@ def execute_temp_save_local(cfg: WorkerConfig, payload: Dict[str, Any]) -> Dict[
         next_dno = next_available_dno(cur, year, user_code)
         expo_key = f"{year}{user_code}{next_pno}"
 
-        suchulja_sangho, _, _ = resolve_deal_master(cur, suchulja_code, trim(payload.get("suchuljaSangho")), "", "")
-        whaju_sangho, whaju_tong, whaju_saup = resolve_deal_master(
+        suchulja_detail = resolve_deal_master_detail(
+            cur,
+            suchulja_code,
+            {
+                "sangho": payload.get("suchuljaSangho"),
+                "post": payload.get("postCode"),
+                "juso": payload.get("juso"),
+                "juso2": payload.get("locationAddr"),
+            },
+        )
+        whaju_detail = resolve_deal_master_detail(
             cur,
             trim(payload.get("whajuCode")),
-            trim(payload.get("whajuSangho")),
-            trim(payload.get("whajuTong")),
-            trim(payload.get("whajuSaup")),
+            {
+                "sangho": payload.get("whajuSangho"),
+                "tong": payload.get("whajuTong"),
+                "saup": payload.get("whajuSaup"),
+            },
         )
-        trust_sangho, trust_tong, trust_saup = resolve_deal_master(
+        trust_detail = resolve_deal_master_detail(
             cur,
             trust_code,
-            trim(payload.get("trustSangho")),
-            trim(payload.get("trustTong")),
-            trim(payload.get("trustSaup")),
+            {
+                "sangho": payload.get("trustSangho"),
+                "name": payload.get("trustName"),
+                "tong": payload.get("trustTong"),
+                "saup": payload.get("trustSaup"),
+                "post": payload.get("trustPost"),
+                "juso": payload.get("trustJuso"),
+                "juso2": payload.get("trustJuso2"),
+                "road_nm_cd": payload.get("trustRoadCd"),
+                "buld_mng_no": payload.get("trustBuildMngNo"),
+            },
         )
+        suchulja_sangho = suchulja_detail["sangho"]
+        whaju_sangho = whaju_detail["sangho"]
+        whaju_tong = whaju_detail["tong"]
+        whaju_saup = whaju_detail["saup"]
+        trust_sangho = trust_detail["sangho"]
+        trust_tong = trust_detail["tong"]
+        trust_saup = trust_detail["saup"]
         gumaeja_sangho = resolve_gonggub_sangho(cur, trim(payload.get("gumaejaCode")), trim(payload.get("gumaejaSangho")))
 
         execute_update(cur, "DELETE FROM expo2 WHERE exlan_key=%s", (expo_key,))
@@ -402,12 +468,24 @@ def execute_temp_save_local(cfg: WorkerConfig, payload: Dict[str, Any]) -> Dict[
                 trim(payload.get("mokjukCode"), "KG"), trim(payload.get("mokjukName"), "KYRGY"),
                 trim(payload.get("hangguCode"), "KRINC"), trim(payload.get("hangguName"), ""),
                 trim(payload.get("unsongType"), "10"), trim(payload.get("unsongBox"), "LC"), singo_date,
-                trim(payload.get("postCode")), trim(payload.get("juso")), trim(payload.get("locationAddr")), iv_no, lan_no,
+                trim(payload.get("postCode"), suchulja_detail["post"]),
+                trim(payload.get("juso"), suchulja_detail["juso"]),
+                trim(payload.get("locationAddr"), suchulja_detail["juso2"]),
+                iv_no,
+                lan_no,
                 total_weight, trim(payload.get("weightUnit"), "KG"), package_cnt,
                 total_won, usd_exch, gyelje_input,
                 trim(payload.get("indojo"), "FOB"), trim(payload.get("gyeljeMoney"), "USD"), usd_exch, gyelje_input,
-                trust_code, trust_sangho, trim(payload.get("trustJuso")), trim(payload.get("trustName")), trust_tong,
-                trust_saup, trim(payload.get("trustPost")), trim(payload.get("trustJuso2")), trim(payload.get("trustRoadCd")), trim(payload.get("trustBuildMngNo")),
+                trust_code,
+                trust_sangho,
+                trim(payload.get("trustJuso"), trust_detail["juso"]),
+                trim(payload.get("trustName"), trust_detail["name"]),
+                trust_tong,
+                trust_saup,
+                trim(payload.get("trustPost"), trust_detail["post"]),
+                trim(payload.get("trustJuso2"), trust_detail["juso2"]),
+                trim(payload.get("trustRoadCd"), trust_detail["road_nm_cd"]),
+                trim(payload.get("trustBuildMngNo"), trust_detail["buld_mng_no"]),
                 trim(payload.get("eventType"), "A"), trim(payload.get("southNorthTradeYn"), "Y"),
                 writer_id, writer_name, add_dttm
             ),

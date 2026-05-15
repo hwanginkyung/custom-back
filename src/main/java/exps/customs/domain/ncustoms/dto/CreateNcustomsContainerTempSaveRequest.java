@@ -117,7 +117,6 @@ public class CreateNcustomsContainerTempSaveRequest {
     @Schema(example = "001")
     private String containerSeqNo;
 
-    @NotBlank
     @Schema(example = "HSLU5006457")
     private String containerNo;
 
@@ -148,6 +147,12 @@ public class CreateNcustomsContainerTempSaveRequest {
 
     @Schema(example = "OU")
     private String packageUnit;
+
+    @Schema(example = "11")
+    private String tradeType;
+
+    @Schema(example = "TT")
+    private String paymentMethod;
 
     @Schema(example = "USD")
     private String gyeljeMoney;
@@ -181,6 +186,30 @@ public class CreateNcustomsContainerTempSaveRequest {
 
     @Schema(example = "LC")
     private String unsongBox;
+
+    @Schema(example = "CY")
+    private String bondedAreaCode;
+
+    @Schema(example = "HSLU5006457")
+    private String banipNo;
+
+    @Schema(example = "Incheon Ro-Ro yard")
+    private String warehouseLocation;
+
+    @Schema(example = "N")
+    private String refundApplicant;
+
+    @Schema(example = "N")
+    private String simpleRefundApplicationYn;
+
+    @Schema(example = "N")
+    private String temporaryOpeningNoticeYn;
+
+    @Schema(example = "0001")
+    private String agencyCode;
+
+    @Schema(example = "Sample Agency")
+    private String agencyName;
 
     @Schema(example = "AUTO")
     private String procGbn;

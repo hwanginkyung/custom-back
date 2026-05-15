@@ -199,6 +199,80 @@ def exists(cur, sql: str, params: Tuple = ()) -> bool:
     return row is not None
 
 
+def safe_identifier(identifier: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_]+", identifier):
+        raise RuntimeError(f"unsafe SQL identifier: {identifier}")
+    return identifier
+
+
+def find_existing_column(cur, table_name: str, candidates: List[str]) -> Optional[Tuple[str, Optional[int]]]:
+    for candidate in candidates:
+        row = query_one(
+            cur,
+            """
+            SELECT COLUMN_NAME, CHARACTER_MAXIMUM_LENGTH
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = %s
+              AND LOWER(COLUMN_NAME) = LOWER(%s)
+            LIMIT 1
+            """,
+            (table_name, candidate),
+        )
+        if row:
+            max_len = int(row[1]) if row[1] is not None else None
+            return trim(row[0]), max_len
+    return None
+
+
+def update_optional_column(
+    cur,
+    table_name: str,
+    key_column: str,
+    key_value: str,
+    candidates: List[str],
+    value: Any,
+) -> bool:
+    text = trim(value)
+    if not text:
+        return False
+    column = find_existing_column(cur, table_name, candidates)
+    if not column:
+        return False
+    column_name, max_len = column
+    if max_len is not None and max_len > 0:
+        text = text[:max_len]
+    try:
+        table_sql = safe_identifier(table_name)
+        key_sql = safe_identifier(key_column)
+        column_sql = safe_identifier(column_name)
+        execute_update(cur, f"UPDATE `{table_sql}` SET `{column_sql}`=%s WHERE `{key_sql}`=%s", (text, key_value))
+        return True
+    except Exception as exc:
+        log(f"optional column update skipped table={table_name} column={column_name}: {exc}")
+        return False
+
+
+def resolve_deal_master_optional_value(cur, deal_code: str, column_candidates: List[str]) -> str:
+    raw_code = trim(deal_code)
+    if not raw_code:
+        return ""
+    column = find_existing_column(cur, "DDeal", column_candidates)
+    if not column:
+        return ""
+    column_name, _max_len = column
+    column_sql = safe_identifier(column_name)
+    code_candidates = [raw_code]
+    normalized = normalize_deal_code(raw_code)
+    if normalized and normalized not in code_candidates:
+        code_candidates.append(normalized)
+    for code in code_candidates:
+        row = query_one(cur, f"SELECT `{column_sql}` FROM DDeal WHERE Deal_code=%s", (code,))
+        if row and trim(row[0]):
+            return trim(row[0])
+    return ""
+
+
 def query_required_string(cur, sql: str, params: Tuple = ()) -> str:
     row = query_one(cur, sql, params)
     if not row:
@@ -360,7 +434,12 @@ def execute_temp_save_local(cfg: WorkerConfig, payload: Dict[str, Any]) -> Dict[
     iv_no = trim(payload.get("ivNo"))
     container_no = trim(payload.get("containerNo"))
     hs_code = trim(payload.get("hsCode"))
-    if not segwan or not gwa or not suchulja_code or not trust_code or not iv_no or not container_no or not hs_code:
+    singo_gbn = trim(payload.get("singoGbn"), "B").upper()
+    if singo_gbn not in {"B", "H"}:
+        singo_gbn = "B"
+    if not segwan or not gwa or not suchulja_code or not trust_code or not iv_no or not hs_code:
+        raise RuntimeError("missing required fields for temp-save")
+    if singo_gbn == "B" and not container_no:
         raise RuntimeError("missing required fields for temp-save")
 
     writer_id = trim(payload.get("writerId"), "SYSTEM")
@@ -379,10 +458,19 @@ def execute_temp_save_local(cfg: WorkerConfig, payload: Dict[str, Any]) -> Dict[
     lan_no = trim(payload.get("lanNo"), "001")
     hang_no = trim(payload.get("hangNo"), "01")
     seq_no = trim(payload.get("containerSeqNo"), "001")
-    singo_gbn = trim(payload.get("singoGbn"), "B").upper()
-    if singo_gbn not in {"B", "H"}:
-        singo_gbn = "B"
     unsong_type = "10"
+    unsong_box = "BU" if singo_gbn == "H" else "LC"
+    trade_type = trim(payload.get("tradeType"), "11")
+    payment_method = trim(payload.get("paymentMethod"), "TT").upper()
+    if payment_method not in {"TT", "GN"}:
+        payment_method = "TT"
+    bonded_area_code = "" if singo_gbn == "H" else trim(payload.get("bondedAreaCode"), "CY")
+    banip_no = "" if singo_gbn == "H" else trim(payload.get("banipNo"), container_no)
+    warehouse_location = trim(payload.get("warehouseLocation"))
+    refund_applicant = trim(payload.get("refundApplicant"), "N").upper()
+    simple_refund_yn = trim(payload.get("simpleRefundApplicationYn"), "N").upper()
+    temporary_opening_notice_yn = trim(payload.get("temporaryOpeningNoticeYn"), "N").upper()
+    transport_ref = container_no if singo_gbn == "B" else warehouse_location
 
     lock_key = f"ncustoms:expo:{year}:{user_code}"
     conn = db_connect(cfg)
@@ -485,7 +573,7 @@ def execute_temp_save_local(cfg: WorkerConfig, payload: Dict[str, Any]) -> Dict[
                 %s, %s, %s,
                 %s, %s, %s, %s,
                 %s, %s,
-                'A', 'TT',
+                'A', %s,
                 %s, %s, %s, %s,
                 %s, %s, %s,
                 %s, %s, %s, %s, %s,
@@ -505,9 +593,10 @@ def execute_temp_save_local(cfg: WorkerConfig, payload: Dict[str, Any]) -> Dict[
                 suchulja_code, suchulja_sangho, trim(payload.get("suchuljaGbn"), "C"),
                 trim(payload.get("whajuCode")), whaju_sangho, whaju_tong, whaju_saup,
                 trim(payload.get("gumaejaCode")), gumaeja_sangho,
+                payment_method,
                 trim(payload.get("mokjukCode"), "KG"), trim(payload.get("mokjukName"), "KYRGY"),
                 trim(payload.get("hangguCode"), "KRINC"), trim(payload.get("hangguName"), ""),
-                unsong_type, trim(payload.get("unsongBox"), "LC"), singo_date,
+                unsong_type, unsong_box, singo_date,
                 trim(payload.get("postCode"), suchulja_detail["post"]),
                 trim(payload.get("juso"), suchulja_detail["juso"]),
                 trim(payload.get("locationAddr"), suchulja_detail["juso2"]),
@@ -529,6 +618,122 @@ def execute_temp_save_local(cfg: WorkerConfig, payload: Dict[str, Any]) -> Dict[
                 trim(payload.get("eventType"), "A"), trim(payload.get("southNorthTradeYn"), "Y"),
                 writer_id, writer_name, add_dttm
             ),
+        )
+
+        agency_code = trim(payload.get("agencyCode")) or resolve_deal_master_optional_value(
+            cur,
+            trim(payload.get("whajuCode")),
+            [
+                "Deal_daehang_code", "Deal_daehangsa_code", "Deal_daeri_code", "Deal_agent_code",
+                "DEAL_DAEHANG_CODE", "DEAL_DAERI_CODE", "DEAL_AGENT_CODE",
+            ],
+        )
+        agency_name = trim(payload.get("agencyName")) or resolve_deal_master_optional_value(
+            cur,
+            trim(payload.get("whajuCode")),
+            [
+                "Deal_daehang_sangho", "Deal_daehangsa_sangho", "Deal_daeri_sangho", "Deal_agent_sangho",
+                "DEAL_DAEHANG_SANGHO", "DEAL_DAERI_SANGHO", "DEAL_AGENT_SANGHO",
+            ],
+        )
+        update_optional_column(
+            cur,
+            "expo1",
+            "Expo_key",
+            expo_key,
+            [
+                "Expo_gurae_gbn", "Expo_georae_gbn", "Expo_trade_gbn", "Expo_gurae",
+                "Expo_georae", "Expo_deal_gbn", "EXPO_GURAE_GBN", "EXPO_GEORAE_GBN",
+            ],
+            trade_type,
+        )
+        update_optional_column(
+            cur,
+            "expo1",
+            "Expo_key",
+            expo_key,
+            [
+                "Expo_banip_buse", "Expo_banip_buho", "Expo_bonded_area_code",
+                "Expo_bose_buho", "EXPO_BANIP_BUSE", "EXPO_BANIP_BUHO",
+            ],
+            bonded_area_code,
+        )
+        update_optional_column(
+            cur,
+            "expo1",
+            "Expo_key",
+            expo_key,
+            [
+                "Expo_banip_no", "Expo_banipno", "Expo_cargo_no", "Expo_bonded_no",
+                "EXPO_BANIP_NO", "EXPO_BANIPNO",
+            ],
+            banip_no,
+        )
+        update_optional_column(
+            cur,
+            "expo1",
+            "Expo_key",
+            expo_key,
+            [
+                "Expo_warehouse_location", "Expo_changgo_location", "Expo_changgo",
+                "Expo_banip_jiyuk", "EXPO_WAREHOUSE_LOCATION", "EXPO_CHANGGO",
+            ],
+            warehouse_location,
+        )
+        update_optional_column(
+            cur,
+            "expo1",
+            "Expo_key",
+            expo_key,
+            [
+                "Expo_refund_applicant", "Expo_hwan_applicant", "Expo_hwan_sinchungin",
+                "Expo_hwan_sinchung", "EXPO_REFUND_APPLICANT", "EXPO_HWAN_SINCHUNGIN",
+            ],
+            refund_applicant,
+        )
+        update_optional_column(
+            cur,
+            "expo1",
+            "Expo_key",
+            expo_key,
+            [
+                "Expo_simple_refund_yn", "Expo_gani_hwan_yn", "Expo_ganihwan_yn",
+                "EXPO_SIMPLE_REFUND_YN", "EXPO_GANI_HWAN_YN",
+            ],
+            simple_refund_yn,
+        )
+        update_optional_column(
+            cur,
+            "expo1",
+            "Expo_key",
+            expo_key,
+            [
+                "Expo_temp_open_yn", "Expo_imsi_gaecheong_yn", "Expo_imsi_open_yn",
+                "EXPO_TEMP_OPEN_YN", "EXPO_IMSI_GAECHEONG_YN",
+            ],
+            temporary_opening_notice_yn,
+        )
+        update_optional_column(
+            cur,
+            "expo1",
+            "Expo_key",
+            expo_key,
+            [
+                "Expo_daehang_code", "Expo_daehangsa_code", "Expo_daeri_code", "Expo_agent_code",
+                "EXPO_DAEHANG_CODE", "EXPO_DAERI_CODE", "EXPO_AGENT_CODE",
+            ],
+            agency_code,
+        )
+        update_optional_column(
+            cur,
+            "expo1",
+            "Expo_key",
+            expo_key,
+            [
+                "Expo_daehang_sangho", "Expo_daehangsa_sangho", "Expo_daeri_sangho", "Expo_agent_sangho",
+                "EXPO_DAEHANG_SANGHO", "EXPO_DAERI_SANGHO", "EXPO_AGENT_SANGHO",
+            ],
+            agency_name,
         )
 
         row = query_one(cur, "SELECT COALESCE(MAX(expo_cnt), 0) + 1 FROM expodamdang WHERE expo_key=%s", (expo_key,))
@@ -601,21 +806,22 @@ def execute_temp_save_local(cfg: WorkerConfig, payload: Dict[str, Any]) -> Dict[
                 expo_key, lan_no, hang_no,
                 qty, gyelje_input, gyelje_input,
                 item_name_line1,
-                container_no,
+                transport_ref,
                 item_name_line3,
             ),
         )
 
-        execute_update(
-            cur,
-            "INSERT INTO expcar (EXPO5_KEY, EXPO5_LAN, EXPO5_HNG, EXPO5_SEQNO, EXPO5_NO, EXPO5_JUNG_CD, JJGBN, DELFLAG) VALUES (%s, %s, %s, %s, %s, '', '', '')",
-            (expo_key, lan_no, hang_no, seq_no, container_no),
-        )
-        execute_update(
-            cur,
-            "INSERT INTO excon (ExCon_Key, ExCon_Seq, ExCon_No) VALUES (%s, %s, %s)",
-            (expo_key, hang_no, container_no),
-        )
+        if singo_gbn == "B":
+            execute_update(
+                cur,
+                "INSERT INTO expcar (EXPO5_KEY, EXPO5_LAN, EXPO5_HNG, EXPO5_SEQNO, EXPO5_NO, EXPO5_JUNG_CD, JJGBN, DELFLAG) VALUES (%s, %s, %s, %s, %s, '', '', '')",
+                (expo_key, lan_no, hang_no, seq_no, container_no),
+            )
+            execute_update(
+                cur,
+                "INSERT INTO excon (ExCon_Key, ExCon_Seq, ExCon_No) VALUES (%s, %s, %s)",
+                (expo_key, hang_no, container_no),
+            )
 
         execute_update(cur, "DELETE FROM expo3_ft WHERE ft_key LIKE CONCAT(%s, '%')", (expo_key,))
         execute_update(

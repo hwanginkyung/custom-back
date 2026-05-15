@@ -26,6 +26,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -322,6 +323,14 @@ public class NcustomsExportService {
                 String hangNo = defaultIfBlank(req.getHangNo(), "01");
                 String seqNo = defaultIfBlank(req.getContainerSeqNo(), "001");
                 String addDtTime = LocalDateTime.now(ZoneId.of("Asia/Seoul")).format(YMD_HMS);
+                String singoGbn = normalizeSingoGbn(req.getSingoGbn());
+                String containerNo = defaultIfBlank(req.getContainerNo(), "");
+                if ("B".equals(singoGbn) && containerNo.isBlank()) {
+                    throw new CustomException(ErrorCode.INVALID_INPUT, "containerNo is required for container declaration");
+                }
+                String paymentMethod = normalizePaymentMethod(req.getPaymentMethod());
+                String unsongBox = "H".equals(singoGbn) ? "BU" : "LC";
+                String transportRef = "B".equals(singoGbn) ? containerNo : defaultIfBlank(req.getWarehouseLocation(), "");
 
                 BigDecimal usdExch = defaultBigDecimal(req.getUsdExch());
                 BigDecimal gyeljeInput = defaultBigDecimal(req.getGyeljeInput());
@@ -365,7 +374,7 @@ public class NcustomsExportService {
                             ?, ?, ?,
                             ?, ?, ?, ?,
                             ?, ?,
-                            'A', 'TT',
+                            'A', ?,
                             ?, ?, ?, ?,
                             ?, ?, ?,
                             ?, ?, ?, ?, ?,
@@ -379,14 +388,15 @@ public class NcustomsExportService {
                         )
                         """,
                         expoKey, req.getYear(), nextDno,
-                        req.getYear().substring(2), req.getSegwan(), req.getGwa(), singoDate, defaultIfBlank(req.getSingoGbn(), "B"),
+                        req.getYear().substring(2), req.getSegwan(), req.getGwa(), singoDate, singoGbn,
                         suchuljaMaster.sangho(),
                         req.getSuchuljaCode(), suchuljaMaster.sangho(), defaultIfBlank(req.getSuchuljaGbn(), "C"),
                         req.getWhajuCode(), whajuMaster.sangho(), whajuMaster.tong(), whajuMaster.saup(),
                         req.getGumaejaCode(), gumaejaSangho,
+                        paymentMethod,
                         defaultIfBlank(req.getMokjukCode(), "KG"), defaultIfBlank(req.getMokjukName(), "KYRGY"),
                         defaultIfBlank(req.getHangguCode(), "KRINC"), defaultIfBlank(req.getHangguName(), ""),
-                        defaultIfBlank(req.getUnsongType(), "10"), defaultIfBlank(req.getUnsongBox(), "LC"), singoDate,
+                        "10", unsongBox, singoDate,
                         req.getPostCode(), req.getJuso(), req.getLocationAddr(), req.getIvNo(), lanNo,
                         totalWeight, defaultIfBlank(req.getWeightUnit(), "KG"), packageCnt,
                         totalWon, usdExch, gyeljeInput,
@@ -459,16 +469,18 @@ public class NcustomsExportService {
                         expoKey, lanNo, hangNo,
                         qty, gyeljeInput, gyeljeInput,
                         defaultIfBlank(req.getItemNameLine1(), defaultIfBlank(req.getItemName(), "")),
-                        req.getContainerNo(),
+                        transportRef,
                         defaultIfBlank(req.getItemNameLine3(), "")
                 );
 
-                executeUpdate(conn,
-                        "INSERT INTO expcar (EXPO5_KEY, EXPO5_LAN, EXPO5_HNG, EXPO5_SEQNO, EXPO5_NO, EXPO5_JUNG_CD, JJGBN, DELFLAG) VALUES (?, ?, ?, ?, ?, '', '', '')",
-                        expoKey, lanNo, hangNo, seqNo, req.getContainerNo());
-                executeUpdate(conn,
-                        "INSERT INTO excon (ExCon_Key, ExCon_Seq, ExCon_No) VALUES (?, ?, ?)",
-                        expoKey, hangNo, req.getContainerNo());
+                if ("B".equals(singoGbn)) {
+                    executeUpdate(conn,
+                            "INSERT INTO expcar (EXPO5_KEY, EXPO5_LAN, EXPO5_HNG, EXPO5_SEQNO, EXPO5_NO, EXPO5_JUNG_CD, JJGBN, DELFLAG) VALUES (?, ?, ?, ?, ?, '', '', '')",
+                            expoKey, lanNo, hangNo, seqNo, containerNo);
+                    executeUpdate(conn,
+                            "INSERT INTO excon (ExCon_Key, ExCon_Seq, ExCon_No) VALUES (?, ?, ?)",
+                            expoKey, hangNo, containerNo);
+                }
 
                 executeUpdate(conn,
                         "DELETE FROM expo3_ft WHERE ft_key LIKE CONCAT(?, '%')",
@@ -498,7 +510,7 @@ public class NcustomsExportService {
                         .expoJechlNo(nextDno)
                         .lanNo(lanNo)
                         .hangNo(hangNo)
-                        .containerNo(req.getContainerNo())
+                        .containerNo(containerNo)
                         .addDtTime(addDtTime)
                         .build();
             } catch (CustomException e) {
@@ -735,6 +747,16 @@ public class NcustomsExportService {
 
     private BigDecimal defaultBigDecimal(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private String normalizeSingoGbn(String value) {
+        String normalized = defaultIfBlank(value, "B").trim().toUpperCase(Locale.ROOT);
+        return ("B".equals(normalized) || "H".equals(normalized)) ? normalized : "B";
+    }
+
+    private String normalizePaymentMethod(String value) {
+        String normalized = defaultIfBlank(value, "TT").trim().toUpperCase(Locale.ROOT);
+        return ("TT".equals(normalized) || "GN".equals(normalized)) ? normalized : "TT";
     }
 
     private void rollbackQuietly(Connection conn) {

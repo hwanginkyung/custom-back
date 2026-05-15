@@ -407,6 +407,11 @@ def execute_temp_save_local(cfg: WorkerConfig, payload: Dict[str, Any]) -> Dict[
         trust_tong = trust_detail["tong"]
         trust_saup = trust_detail["saup"]
         gumaeja_sangho = resolve_gonggub_sangho(cur, trim(payload.get("gumaejaCode")), trim(payload.get("gumaejaSangho")))
+        item_name = trim(payload.get("itemName"))
+        if not item_name:
+            item_name = "USED CAR" if hs_code.startswith("8703") else "ITEM"
+        item_name_line1 = trim(payload.get("itemNameLine1"), item_name)
+        item_name_line3 = trim(payload.get("itemNameLine3"))
 
         execute_update(cur, "DELETE FROM expo2 WHERE exlan_key=%s", (expo_key,))
         execute_update(cur, "DELETE FROM expo3 WHERE expum_key=%s", (expo_key,))
@@ -525,9 +530,9 @@ def execute_temp_save_local(cfg: WorkerConfig, payload: Dict[str, Any]) -> Dict[
                 total_weight, trim(payload.get("weightUnit"), "KG"),
                 qty, "U",
                 package_cnt, trim(payload.get("packageUnit"), "OU"),
-                trim(payload.get("itemName")),
-                trim(payload.get("itemName")),
-                trim(payload.get("itemName")),
+                item_name,
+                item_name,
+                item_name,
                 gyelje_input, gyelje_input, total_won, gyelje_input,
                 trim(payload.get("originCountry"), "KR"),
             ),
@@ -560,9 +565,9 @@ def execute_temp_save_local(cfg: WorkerConfig, payload: Dict[str, Any]) -> Dict[
             (
                 expo_key, lan_no, hang_no,
                 qty, gyelje_input, gyelje_input,
-                trim(payload.get("itemNameLine1"), trim(payload.get("itemName"))),
+                item_name_line1,
                 container_no,
-                trim(payload.get("itemNameLine3")),
+                item_name_line3,
             ),
         )
 

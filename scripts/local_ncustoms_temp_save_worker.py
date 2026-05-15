@@ -379,6 +379,10 @@ def execute_temp_save_local(cfg: WorkerConfig, payload: Dict[str, Any]) -> Dict[
     lan_no = trim(payload.get("lanNo"), "001")
     hang_no = trim(payload.get("hangNo"), "01")
     seq_no = trim(payload.get("containerSeqNo"), "001")
+    singo_gbn = trim(payload.get("singoGbn"), "B").upper()
+    if singo_gbn not in {"B", "H"}:
+        singo_gbn = "B"
+    unsong_type = "10"
 
     lock_key = f"ncustoms:expo:{year}:{user_code}"
     conn = db_connect(cfg)
@@ -496,14 +500,14 @@ def execute_temp_save_local(cfg: WorkerConfig, payload: Dict[str, Any]) -> Dict[
             """,
             (
                 expo_key, year, next_dno,
-                year[2:], segwan, gwa, singo_date, trim(payload.get("singoGbn"), "B"),
+                year[2:], segwan, gwa, singo_date, singo_gbn,
                 suchulja_sangho,
                 suchulja_code, suchulja_sangho, trim(payload.get("suchuljaGbn"), "C"),
                 trim(payload.get("whajuCode")), whaju_sangho, whaju_tong, whaju_saup,
                 trim(payload.get("gumaejaCode")), gumaeja_sangho,
                 trim(payload.get("mokjukCode"), "KG"), trim(payload.get("mokjukName"), "KYRGY"),
                 trim(payload.get("hangguCode"), "KRINC"), trim(payload.get("hangguName"), ""),
-                trim(payload.get("unsongType"), "10"), trim(payload.get("unsongBox"), "LC"), singo_date,
+                unsong_type, trim(payload.get("unsongBox"), "LC"), singo_date,
                 trim(payload.get("postCode"), suchulja_detail["post"]),
                 trim(payload.get("juso"), suchulja_detail["juso"]),
                 trim(payload.get("locationAddr"), suchulja_detail["juso2"]),
